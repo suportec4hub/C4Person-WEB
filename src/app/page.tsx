@@ -52,6 +52,14 @@ export default function Dashboard() {
   const [habits, setHabits] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
 
+  const [showHabitModal, setShowHabitModal] = useState(false);
+  const [newHabitName, setNewHabitName] = useState("");
+
+  const [showFinanceModal, setShowFinanceModal] = useState(false);
+  const [newTransactionName, setNewTransactionName] = useState("");
+  const [newTransactionAmount, setNewTransactionAmount] = useState("");
+  const [newTransactionType, setNewTransactionType] = useState<"in" | "out">("out");
+
   const fetchTasks = async () => {
     const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
     if (data) setTasks(data);
@@ -98,6 +106,36 @@ export default function Dashboard() {
     if (data) {
       setTasks(prev => prev.map(t => t.id === tempId ? data[0] : t));
     }
+  };
+
+  const handleAddHabit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newHabitName.trim()) return;
+    const newHabit = { name: newHabitName, streak: 0, is_completed_today: false };
+    const tempId = Date.now().toString();
+    setHabits([...habits, { id: tempId, ...newHabit }]);
+    setShowHabitModal(false);
+    setNewHabitName("");
+
+    const { data } = await supabase.from('habits').insert([newHabit]).select();
+    if (data) setHabits(prev => prev.map(h => h.id === tempId ? data[0] : h));
+  };
+
+  const handleAddTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTransactionName.trim() || !newTransactionAmount) return;
+    const amountNum = parseFloat(newTransactionAmount.replace(',', '.'));
+    if (isNaN(amountNum)) return;
+
+    const newTx = { name: newTransactionName, amount: amountNum, type: newTransactionType, transaction_date: new Date().toISOString() };
+    const tempId = Date.now().toString();
+    setTransactions([ { id: tempId, ...newTx }, ...transactions ]);
+    setShowFinanceModal(false);
+    setNewTransactionName("");
+    setNewTransactionAmount("");
+
+    const { data } = await supabase.from('transactions').insert([newTx]).select();
+    if (data) setTransactions(prev => prev.map(t => t.id === tempId ? data[0] : t));
   };
 
   useEffect(() => {
@@ -211,6 +249,10 @@ export default function Dashboard() {
   const totalOut = transactions.filter(t => t.type === 'out').reduce((acc, curr) => acc + Number(curr.amount), 0);
   const totalBalance = totalIn - totalOut;
 
+  const topPriorityTask = tasks.find(t => t.priority === 'alta' && !t.is_done) || tasks.find(t => !t.is_done) || tasks[0];
+  const otherTasks = topPriorityTask ? tasks.filter(t => t.id !== topPriorityTask.id) : tasks;
+  const upcomingEvents = tasks.filter(t => t.time && t.time !== "Livre" && !t.is_done).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+
   if (!mounted) return null;
 
   return (
@@ -277,25 +319,31 @@ export default function Dashboard() {
               Foco do Dia
             </h3>
             
-            <div className="bg-background/50 border border-white/5 rounded-xl p-5 mb-6 flex items-start gap-4 group cursor-pointer hover:border-primary/50 transition-all relative z-10">
-              <button className="mt-1 text-muted-foreground group-hover:text-primary transition-colors">
-                <Circle size={24} />
-              </button>
-              <div>
-                <h4 className="text-xl font-medium text-white mb-1">Finalizar Arquitetura do C4 Person App</h4>
-                <p className="text-muted-foreground text-sm">Estruturar o banco de dados no Supabase e definir os esquemas principais.</p>
+            {topPriorityTask ? (
+              <div onClick={() => toggleTask(topPriorityTask.id, topPriorityTask.is_done)} className={`bg-background/50 border border-white/5 rounded-xl p-5 mb-6 flex items-start gap-4 group cursor-pointer hover:border-primary/50 transition-all relative z-10 ${topPriorityTask.is_done ? 'opacity-50' : ''}`}>
+                <button className={`mt-1 transition-colors ${topPriorityTask.is_done ? 'text-accent' : 'text-muted-foreground group-hover:text-primary'}`}>
+                  {topPriorityTask.is_done ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                </button>
+                <div>
+                  <h4 className={`text-xl font-medium mb-1 ${topPriorityTask.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{topPriorityTask.title}</h4>
+                  <p className="text-muted-foreground text-sm">{topPriorityTask.time && topPriorityTask.time !== 'Livre' ? `Marcado para ${topPriorityTask.time}` : 'Sem horário definido'}</p>
+                </div>
+                <div className="ml-auto bg-primary/20 text-primary text-xs font-medium px-3 py-1 rounded-full">
+                  Principal
+                </div>
               </div>
-              <div className="ml-auto bg-primary/20 text-primary text-xs font-medium px-3 py-1 rounded-full">
-                Alta Prioridade
+            ) : (
+              <div className="bg-background/50 border border-white/5 rounded-xl p-5 mb-6 text-center text-muted-foreground relative z-10">
+                Nenhuma tarefa pendente!
               </div>
-            </div>
+            )}
 
             <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">Outras Tarefas</h3>
             <ul className="space-y-3 relative z-10">
-              {tasks.length === 0 ? (
+              {otherTasks.length === 0 ? (
                 <p className="text-sm text-muted-foreground italic">Nenhuma tarefa. Adicione uma nova!</p>
               ) : (
-                tasks.map((task) => (
+                otherTasks.map((task) => (
                   <li 
                     key={task.id} 
                     onClick={() => toggleTask(task.id, task.is_done)}
@@ -303,7 +351,7 @@ export default function Dashboard() {
                   >
                     {task.is_done ? <CheckCircle2 size={20} className="text-accent" /> : <Circle size={20} className="text-muted-foreground" />}
                     <span className={`flex-1 ${task.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{task.title}</span>
-                    <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock size={12}/> {task.time}</span>
+                    <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock size={12}/> {task.time || "Livre"}</span>
                   </li>
                 ))
               )}
@@ -355,6 +403,9 @@ export default function Dashboard() {
                   ))
                 )}
               </div>
+              <button onClick={() => setShowHabitModal(true)} className="mt-5 flex items-center gap-2 text-sm text-orange-400 hover:text-orange-300 transition-colors">
+                <Plus size={16} /> Novo Hábito
+              </button>
             </div>
 
             {/* Agenda Resumo */}
@@ -364,17 +415,17 @@ export default function Dashboard() {
                 Próximos Eventos
               </h3>
               <div className="relative border-l border-white/10 ml-3 pl-5 space-y-6">
-                {[
-                  { time: "11:30", title: "Sync Diária", type: "work" },
-                  { time: "14:00", title: "Mentoria Técnica", type: "meeting" },
-                  { time: "18:00", title: "Inglês", type: "study" }
-                ].map((event, i) => (
-                  <div key={i} className="relative">
-                    <div className="absolute -left-[25.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.6)] border border-background" />
-                    <p className="text-xs text-blue-400 font-medium mb-1">{event.time}</p>
-                    <p className="text-sm font-medium text-white">{event.title}</p>
-                  </div>
-                ))}
+                {upcomingEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">Sua agenda está livre hoje!</p>
+                ) : (
+                  upcomingEvents.slice(0, 3).map((event) => (
+                    <div key={event.id} className="relative">
+                      <div className="absolute -left-[25.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.6)] border border-background" />
+                      <p className="text-xs text-blue-400 font-medium mb-1">{event.time}</p>
+                      <p className="text-sm font-medium text-white">{event.title}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </motion.section>
@@ -457,6 +508,9 @@ export default function Dashboard() {
                   ))
                 )}
               </div>
+              <button onClick={() => setShowFinanceModal(true)} className="mt-5 flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
+                <Plus size={16} /> Nova Transação
+              </button>
             </div>
           </div>
         </motion.section>
@@ -603,6 +657,119 @@ export default function Dashboard() {
                   type="submit"
                   disabled={!newTaskTitle.trim()}
                   className="mt-2 w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Adicionar
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Modal de Adicionar Hábito */}
+        {showHabitModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-card border border-white/10 p-8 rounded-3xl w-full max-w-md shadow-2xl relative"
+            >
+              <button 
+                onClick={() => setShowHabitModal(false)}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+
+              <h2 className="text-2xl font-bold mb-6 text-white">Novo Hábito</h2>
+              
+              <form onSubmit={handleAddHabit} className="flex flex-col gap-5">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Qual hábito quer construir?</label>
+                  <input 
+                    type="text" 
+                    autoFocus
+                    value={newHabitName}
+                    onChange={(e) => setNewHabitName(e.target.value)}
+                    placeholder="Ex: Ler 10 páginas"
+                    className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500/50 transition-colors"
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  disabled={!newHabitName.trim()}
+                  className="mt-2 w-full bg-orange-500 hover:bg-orange-500/90 text-white py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Adicionar
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Modal de Adicionar Transação */}
+        {showFinanceModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-card border border-white/10 p-8 rounded-3xl w-full max-w-md shadow-2xl relative"
+            >
+              <button 
+                onClick={() => setShowFinanceModal(false)}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+
+              <h2 className="text-2xl font-bold mb-6 text-white">Nova Transação</h2>
+              
+              <form onSubmit={handleAddTransaction} className="flex flex-col gap-5">
+                <div className="flex gap-4 mb-2">
+                  <button type="button" onClick={() => setNewTransactionType('out')} className={`flex-1 py-2 rounded-lg font-medium border ${newTransactionType === 'out' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>Despesa</button>
+                  <button type="button" onClick={() => setNewTransactionType('in')} className={`flex-1 py-2 rounded-lg font-medium border ${newTransactionType === 'in' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>Receita</button>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Nome da transação</label>
+                  <input 
+                    type="text" 
+                    autoFocus
+                    value={newTransactionName}
+                    onChange={(e) => setNewTransactionName(e.target.value)}
+                    placeholder="Ex: Almoço"
+                    className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  />
+                </div>
+                
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Valor (R$)</label>
+                  <input 
+                    type="number"
+                    step="0.01" 
+                    value={newTransactionAmount}
+                    onChange={(e) => setNewTransactionAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  disabled={!newTransactionName.trim() || !newTransactionAmount}
+                  className={`mt-2 w-full py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${newTransactionType === 'in' ? 'bg-emerald-500 hover:bg-emerald-500/90' : 'bg-red-500 hover:bg-red-500/90'} text-white`}
                 >
                   Adicionar
                 </button>
