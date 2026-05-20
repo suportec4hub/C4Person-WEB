@@ -1,6 +1,6 @@
 # C4 Person — Seu Pilar de Execução Diária
 
-Dashboard pessoal de produtividade com gerenciamento de tarefas, hábitos, finanças e anotações com IA. Desenvolvido com Next.js, Supabase e OpenAI.
+Dashboard pessoal de produtividade com gerenciamento de tarefas, hábitos, finanças e anotações com IA. Desenvolvido com Next.js, Supabase e Groq.
 
 ---
 
@@ -30,8 +30,8 @@ O **C4 Person** centraliza os pilares essenciais da rotina em uma única interfa
 
 ### Anotações com IA
 - Gravação de áudio diretamente no navegador (WebM)
-- Transcrição automática via **OpenAI Whisper** (idioma: português)
-- Resumo inteligente com extração de pontos-chave e itens de ação via **GPT-4o-mini**
+- Transcrição automática via **Groq Whisper** (`whisper-large-v3-turbo`, idioma: português)
+- Resumo inteligente com extração de pontos-chave e itens de ação via **Groq Llama** (`llama-3.3-70b-versatile`)
 - Transcrição e resumo salvos no Supabase como nota
 
 ---
@@ -45,8 +45,8 @@ O **C4 Person** centraliza os pilares essenciais da rotina em uma única interfa
 | Animações | Framer Motion |
 | Ícones | Lucide React |
 | Backend / Banco de dados | Supabase (PostgreSQL) |
-| IA — Transcrição | OpenAI Whisper-1 |
-| IA — Resumo | OpenAI GPT-4o-mini |
+| IA — Transcrição | Groq Whisper (`whisper-large-v3-turbo`) |
+| IA — Resumo e Chat | Groq Llama (`llama-3.3-70b-versatile`) |
 | Datas | date-fns (locale pt-BR) |
 | Linguagem | TypeScript 5 |
 
@@ -59,9 +59,9 @@ src/
 ├── app/
 │   ├── api/
 │   │   ├── chat/
-│   │   │   └── route.ts          # Chat com IA sobre os dados do usuário
+│   │   │   └── route.ts          # Chat com IA sobre os dados do usuário (Groq Llama)
 │   │   └── process-audio/
-│   │       └── route.ts          # Transcrição e resumo de reunião (Whisper + GPT)
+│   │       └── route.ts          # Transcrição e resumo de reunião (Groq Whisper + Llama)
 │   ├── finance/
 │   │   └── page.tsx              # Nectar — Finanças completas com gráficos
 │   ├── goals/
@@ -178,14 +178,11 @@ Crie um arquivo `.env.local` na raiz do projeto com as seguintes variáveis:
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_anon_key
 
-# OpenAI — usado para transcrição de áudio (Whisper)
-OPENAI_API_KEY=sk-...
-
-# Groq — usado pelo Assistente de IA (chat) — obtenha em: console.groq.com
+# Groq — transcrição de áudio e chat com IA — obtenha em: console.groq.com
 GROQ_API_KEY=gsk-...
 ```
 
-> **Atenção:** `OPENAI_API_KEY` e `GROQ_API_KEY` são server-side only e nunca expostas ao navegador.
+> **Atenção:** `GROQ_API_KEY` é server-side only e nunca exposta ao navegador.
 
 ---
 
@@ -194,7 +191,7 @@ GROQ_API_KEY=gsk-...
 ### Pré-requisitos
 - Node.js 20+
 - Conta no [Supabase](https://supabase.com)
-- Conta na [OpenAI](https://platform.openai.com)
+- Conta na [Groq](https://console.groq.com) (gratuita)
 
 ### Passos
 
@@ -238,15 +235,36 @@ Recebe um arquivo de áudio gravado no navegador, transcreve e gera um resumo.
 ```json
 {
   "transcription": "Texto completo transcrito do áudio...",
-  "summary": "## Resumo\n- Ponto 1\n- Ponto 2\n\n## Ações\n- [ ] Tarefa identificada"
+  "summary": "## Resumo\n- Ponto 1\n- Ponto 2\n\n## Pontos Principais\n- Item",
+  "actionItems": ["Enviar proposta para o cliente", "Marcar reunião de follow-up"]
 }
 ```
 
 **Fluxo interno:**
 1. Recebe o blob webm via FormData
-2. Envia para **Whisper-1** com `language: "pt"` para transcrição
-3. Envia a transcrição para **GPT-4o-mini** para gerar um resumo estruturado em Markdown com pontos-chave e itens de ação
-4. Retorna ambos como JSON
+2. Envia para **Groq Whisper** (`whisper-large-v3-turbo`) com `language: "pt"` para transcrição
+3. Envia a transcrição para **Groq Llama** (`llama-3.3-70b-versatile`) para gerar resumo estruturado em Markdown com pontos-chave e itens de ação
+4. Retorna `transcription`, `summary` e `actionItems` como JSON
+
+### `POST /api/chat`
+
+Responde perguntas do usuário com base nos dados atuais do dashboard.
+
+**Request:** `application/json`
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `message` | `string` | Mensagem do usuário |
+| `history` | `ChatMessage[]` | Histórico da conversa (últimas 10 mensagens) |
+| `context` | `object` | Tarefas, hábitos e transações do usuário |
+
+**Response:** `application/json`
+
+```json
+{
+  "reply": "Você tem 3 tarefas pendentes hoje..."
+}
+```
 
 ---
 
@@ -270,7 +288,7 @@ Cards utilizam a classe `.glass-card` — `backdrop-filter: blur` com borda suti
 A forma mais simples é usar a [Vercel](https://vercel.com):
 
 1. Importe o repositório na Vercel
-2. Adicione as três variáveis de ambiente no painel da Vercel
+2. Adicione as variáveis de ambiente (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `GROQ_API_KEY`) no painel da Vercel
 3. Deploy automático a cada push na branch `main`
 
 Para outras plataformas, execute:

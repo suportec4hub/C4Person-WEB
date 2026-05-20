@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
+// Groq é compatível com a API da OpenAI — mesma SDK, outra baseURL
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY || "dummy_key",
+  baseURL: "https://api.groq.com/openai/v1",
+});
+
 export async function POST(req: NextRequest) {
   try {
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || "dummy_key",
-    });
-
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -14,18 +16,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nenhum arquivo de áudio enviado." }, { status: 400 });
     }
 
-    // 1. Transcrição via Whisper
-    const transcription = await openai.audio.transcriptions.create({
+    // 1. Transcrição via Groq Whisper
+    const transcription = await groq.audio.transcriptions.create({
       file: file,
-      model: "whisper-1",
+      model: "whisper-large-v3-turbo",
       language: "pt",
     });
 
     const transcriptText = transcription.text;
 
-    // 2. Resumo + extração de tarefas estruturadas via GPT
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    // 2. Resumo + extração de tarefas via Groq (Llama)
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
       response_format: { type: "json_object" },
       messages: [
         {
@@ -62,14 +64,10 @@ Responda SEMPRE em Português do Brasil.`,
       summary = completion.choices[0].message.content || "";
     }
 
-    return NextResponse.json({
-      transcription: transcriptText,
-      summary,
-      actionItems,
-    });
+    return NextResponse.json({ transcription: transcriptText, summary, actionItems });
 
   } catch (error: unknown) {
-    console.error("Erro na API da OpenAI:", error);
+    console.error("Erro no Groq:", error);
     const errorMessage = error instanceof Error ? error.message : "Erro interno no servidor.";
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
