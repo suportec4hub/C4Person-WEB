@@ -28,6 +28,9 @@ import {
   Trash2,
   CheckSquare,
   ListChecks,
+  Bot,
+  Send,
+  Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -47,6 +50,13 @@ export default function Dashboard() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Estados do Chat IA
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Estados de Tarefas
   const [tasks, setTasks] = useState<any[]>([]);
@@ -286,6 +296,45 @@ export default function Dashboard() {
     }, 300);
   };
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const sendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = chatInput.trim();
+    if (!text || isChatLoading) return;
+
+    setChatInput("");
+    const updatedHistory = [...chatMessages, { role: "user" as const, content: text }];
+    setChatMessages(updatedHistory);
+    setIsChatLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          history: chatMessages.slice(-10),
+          context: { tasks, habits, transactions, totalBalance, totalIn, totalOut },
+        }),
+      });
+      const data = await res.json();
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply || "Não consegui responder. Tente novamente." },
+      ]);
+    } catch {
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Erro ao conectar com a IA. Verifique sua chave de API." },
+      ]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
@@ -339,15 +388,27 @@ export default function Dashboard() {
             <h1 className="text-4xl font-bold tracking-tight">Bom dia, Lucas</h1>
           </motion.div>
           
-          <motion.button 
-            onClick={() => setShowRecorder(true)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(139,92,246,0.3)] transition-all"
-          >
-            <Mic size={18} />
-            <span>Gravar Reunião / Nota</span>
-          </motion.button>
+          <div className="flex items-center gap-3">
+            <motion.button
+              onClick={() => setShowChat(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2.5 rounded-full font-medium transition-all"
+            >
+              <Sparkles size={17} className="text-primary" />
+              <span>Assistente IA</span>
+            </motion.button>
+
+            <motion.button
+              onClick={() => setShowRecorder(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(139,92,246,0.3)] transition-all"
+            >
+              <Mic size={18} />
+              <span>Gravar Reunião / Nota</span>
+            </motion.button>
+          </div>
         </header>
 
         <div className="grid grid-cols-12 gap-6">
@@ -909,6 +970,132 @@ export default function Dashboard() {
               </form>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Chat Drawer */}
+      <AnimatePresence>
+        {showChat && (
+          <>
+            {/* Backdrop semitransparente */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowChat(false)}
+              className="fixed inset-0 z-30 bg-black/30"
+            />
+
+            {/* Painel lateral */}
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 280 }}
+              className="fixed right-0 top-0 h-full w-[400px] bg-card border-l border-white/10 z-40 flex flex-col shadow-2xl"
+            >
+              {/* Header do chat */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center">
+                    <Bot size={19} className="text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white text-sm leading-none mb-0.5">C4 Assistant</h3>
+                    <p className="text-xs text-muted-foreground">Powered by GPT-4o-mini</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowChat(false)}
+                  className="text-muted-foreground hover:text-white transition-colors p-1"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Mensagens */}
+              <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 custom-scrollbar">
+                {chatMessages.length === 0 ? (
+                  <div className="flex flex-col gap-3 pt-2">
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+                      <Sparkles size={14} className="text-primary" />
+                      <span>Pergunte sobre seus dados</span>
+                    </div>
+                    {[
+                      "O que tenho para fazer hoje?",
+                      "Como estão meus hábitos?",
+                      "Qual é meu saldo atual?",
+                      "Me dê um resumo do meu dia.",
+                    ].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setChatInput(s)}
+                        className="text-left text-sm px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors border border-white/5"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  chatMessages.map((msg, i) => (
+                    <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                      {msg.role === "assistant" && (
+                        <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center mr-2 mt-1 flex-shrink-0">
+                          <Bot size={13} className="text-primary" />
+                        </div>
+                      )}
+                      <div
+                        className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          msg.role === "user"
+                            ? "bg-primary text-white rounded-br-sm"
+                            : "bg-white/5 text-white/90 border border-white/5 rounded-bl-sm"
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))
+                )}
+
+                {isChatLoading && (
+                  <div className="flex justify-start">
+                    <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center mr-2 mt-1 flex-shrink-0">
+                      <Bot size={13} className="text-primary" />
+                    </div>
+                    <div className="bg-white/5 border border-white/5 px-4 py-3 rounded-2xl rounded-bl-sm">
+                      <div className="flex gap-1 items-center">
+                        <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:0ms]" />
+                        <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:150ms]" />
+                        <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce [animation-delay:300ms]" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Input */}
+              <form onSubmit={sendChatMessage} className="px-4 py-4 border-t border-white/10">
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Pergunte sobre tarefas, hábitos, finanças…"
+                    className="flex-1 bg-background border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!chatInput.trim() || isChatLoading}
+                    className="w-10 h-10 flex items-center justify-center bg-primary hover:bg-primary/90 rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 shadow-[0_4px_12px_rgba(139,92,246,0.3)]"
+                  >
+                    <Send size={16} />
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>
