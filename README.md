@@ -178,11 +178,14 @@ Crie um arquivo `.env.local` na raiz do projeto com as seguintes variáveis:
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua_anon_key
 
-# OpenAI — obtenha em: platform.openai.com/api-keys
+# OpenAI — usado para transcrição de áudio (Whisper)
 OPENAI_API_KEY=sk-...
+
+# Groq — usado pelo Assistente de IA (chat) — obtenha em: console.groq.com
+GROQ_API_KEY=gsk-...
 ```
 
-> **Atenção:** `OPENAI_API_KEY` é usada apenas no servidor (API Route) e nunca é exposta ao navegador.
+> **Atenção:** `OPENAI_API_KEY` e `GROQ_API_KEY` são server-side only e nunca expostas ao navegador.
 
 ---
 

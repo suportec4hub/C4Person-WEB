@@ -34,10 +34,14 @@ interface ChatContext {
   totalOut: number;
 }
 
+// Groq é compatível com a API da OpenAI — basta mudar a baseURL e o modelo
+const groq = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY || "dummy_key",
+  baseURL: "https://api.groq.com/openai/v1",
+});
+
 export async function POST(req: NextRequest) {
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "dummy_key" });
-
     const {
       message,
       history,
@@ -54,21 +58,41 @@ export async function POST(req: NextRequest) {
     const tasksDone = context.tasks.filter((t) => t.is_done);
     const habitsToday = context.habits.filter((h) => h.is_completed_today);
 
-    const tasksLine = tasksPending.length > 0
-      ? tasksPending.map((t) => `- ${t.title}${t.priority === "alta" ? " [ALTA]" : ""}${t.time !== "Livre" ? ` @ ${t.time}` : ""}`).join("\n")
-      : "Nenhuma tarefa pendente.";
+    const tasksLine =
+      tasksPending.length > 0
+        ? tasksPending
+            .map(
+              (t) =>
+                `- ${t.title}${t.priority === "alta" ? " [ALTA]" : ""}${t.time !== "Livre" ? ` @ ${t.time}` : ""}`
+            )
+            .join("\n")
+        : "Nenhuma tarefa pendente.";
 
-    const doneLine = tasksDone.length > 0
-      ? `\nConcluídas hoje: ${tasksDone.map((t) => t.title).join(", ")}`
-      : "";
+    const doneLine =
+      tasksDone.length > 0
+        ? `\nConcluídas hoje: ${tasksDone.map((t) => t.title).join(", ")}`
+        : "";
 
-    const habitsLine = context.habits.length > 0
-      ? context.habits.map((h) => `- ${h.name}: ${h.is_completed_today ? "✓ feito hoje" : "○ pendente"} | ${h.streak} dias de streak`).join("\n")
-      : "Nenhum hábito cadastrado.";
+    const habitsLine =
+      context.habits.length > 0
+        ? context.habits
+            .map(
+              (h) =>
+                `- ${h.name}: ${h.is_completed_today ? "✓ feito hoje" : "○ pendente"} | ${h.streak} dias de streak`
+            )
+            .join("\n")
+        : "Nenhum hábito cadastrado.";
 
-    const txLine = context.transactions.length > 0
-      ? context.transactions.slice(0, 10).map((t) => `  ${t.type === "in" ? "+" : "-"}R$ ${Number(t.amount).toFixed(2)} — ${t.name}`).join("\n")
-      : "  Nenhuma transação registrada.";
+    const txLine =
+      context.transactions.length > 0
+        ? context.transactions
+            .slice(0, 10)
+            .map(
+              (t) =>
+                `  ${t.type === "in" ? "+" : "-"}R$ ${Number(t.amount).toFixed(2)} — ${t.name}`
+            )
+            .join("\n")
+        : "  Nenhuma transação registrada.";
 
     const systemPrompt = [
       "Você é o C4 Assistant, assistente pessoal integrado ao dashboard C4 Person.",
@@ -91,8 +115,8 @@ export async function POST(req: NextRequest) {
       txLine,
     ].join("\n");
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
       max_tokens: 600,
       messages: [
         { role: "system", content: systemPrompt },
@@ -103,7 +127,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ reply: completion.choices[0].message.content });
   } catch (error: unknown) {
-    console.error("Erro no chat IA:", error);
+    console.error("Erro no chat Groq:", error);
     const msg = error instanceof Error ? error.message : "Erro interno.";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
