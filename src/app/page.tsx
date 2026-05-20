@@ -25,7 +25,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Loader2,
-  Trash2
+  Trash2,
+  CheckSquare,
+  ListChecks,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -37,8 +39,10 @@ export default function Dashboard() {
   const [showRecorder, setShowRecorder] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<{transcription: string, summary: string} | null>(null);
+  const [result, setResult] = useState<{ transcription: string; summary: string; actionItems: string[] } | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [selectedActions, setSelectedActions] = useState<string[]>([]);
+  const [importSuccess, setImportSuccess] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -239,6 +243,7 @@ export default function Dashboard() {
       
       const data = await response.json();
       setResult(data);
+      setSelectedActions(data.actionItems ?? []);
 
       // Salvar a nota na nuvem (Supabase)
       await supabase.from('notes').insert([{
@@ -255,12 +260,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleImportTasks = async () => {
+    if (selectedActions.length === 0) return;
+    const newTasks = selectedActions.map(title => ({
+      title,
+      time: "Livre",
+      is_done: false,
+      priority: 'normal' as const,
+    }));
+    const { data } = await supabase.from('tasks').insert(newTasks).select();
+    if (data) {
+      setTasks(prev => [...prev, ...data]);
+      setImportSuccess(true);
+    }
+  };
+
   const closeRecorder = () => {
     if (isRecording) stopRecording();
     setShowRecorder(false);
     setTimeout(() => {
       setResult(null);
       setRecordingTime(0);
+      setSelectedActions([]);
+      setImportSuccess(false);
     }, 300);
   };
 
@@ -630,17 +652,74 @@ export default function Dashboard() {
                   )}
                 </div>
               ) : (
-                <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                  <div className="mb-6 p-4 rounded-xl bg-primary/10 border border-primary/20">
+                <div className="max-h-[65vh] overflow-y-auto pr-2 custom-scrollbar space-y-5">
+
+                  {/* Resumo */}
+                  <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
                     <h3 className="font-semibold text-primary mb-2 flex items-center gap-2">
                       <Target size={18} />
-                      Resumo da IA e Itens de Ação
+                      Resumo da Reunião
                     </h3>
                     <div className="text-sm text-white/90 leading-relaxed whitespace-pre-wrap">
                       {result.summary}
                     </div>
                   </div>
 
+                  {/* Tarefas identificadas pela IA */}
+                  {result.actionItems && result.actionItems.length > 0 && (
+                    <div className="p-4 rounded-xl bg-accent/10 border border-accent/20">
+                      <h3 className="font-semibold text-accent mb-3 flex items-center gap-2">
+                        <ListChecks size={18} />
+                        Tarefas Identificadas pela IA
+                      </h3>
+                      <div className="space-y-2 mb-4">
+                        {result.actionItems.map((item, i) => (
+                          <label key={i} className="flex items-start gap-3 cursor-pointer group">
+                            <div className="relative mt-0.5">
+                              <input
+                                type="checkbox"
+                                checked={selectedActions.includes(item)}
+                                onChange={(e) => {
+                                  setImportSuccess(false);
+                                  setSelectedActions(prev =>
+                                    e.target.checked
+                                      ? [...prev, item]
+                                      : prev.filter(a => a !== item)
+                                  );
+                                }}
+                                className="w-4 h-4 rounded border-white/20 bg-background accent-accent cursor-pointer"
+                              />
+                            </div>
+                            <span className="text-sm text-white/90 leading-snug group-hover:text-white transition-colors">
+                              {item}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+
+                      {importSuccess ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex items-center gap-2 text-accent text-sm font-medium"
+                        >
+                          <CheckCircle2 size={16} />
+                          {selectedActions.length} tarefa(s) adicionada(s) ao seu Foco do Dia!
+                        </motion.div>
+                      ) : (
+                        <button
+                          onClick={handleImportTasks}
+                          disabled={selectedActions.length === 0}
+                          className="flex items-center gap-2 bg-accent hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <CheckSquare size={16} />
+                          Criar {selectedActions.length} tarefa{selectedActions.length !== 1 ? 's' : ''}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Transcrição */}
                   <div>
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">Transcrição Completa</h3>
                     <p className="text-sm text-white/70 leading-relaxed italic">

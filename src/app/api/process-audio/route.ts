@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-// A inicialização do cliente será feita dentro da rota
-// para evitar erros de build no Vercel caso a chave não esteja definida.
 export async function POST(req: NextRequest) {
   try {
     const openai = new OpenAI({
@@ -16,22 +14,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nenhum arquivo de áudio enviado." }, { status: 400 });
     }
 
-    // 1. Transcrição usando a API da OpenAI
+    // 1. Transcrição via Whisper
     const transcription = await openai.audio.transcriptions.create({
       file: file,
       model: "whisper-1",
-      language: "pt", 
+      language: "pt",
     });
 
     const transcriptText = transcription.text;
 
-    // 2. Geração de Resumo e Tarefas com GPT
+    // 2. Resumo + extração de tarefas estruturadas via GPT
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Usando gpt-4o-mini para velocidade e eficiência
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: "Você é um assistente pessoal produtivo. Seu objetivo é analisar a transcrição de uma nota de voz ou reunião e retornar:\n1. Um resumo muito conciso.\n2. Itens de ação extraídos (tarefas), se houver.\nResponda sempre em Português do Brasil usando formatação Markdown (use títulos e listas).",
+          content: `Você é um assistente pessoal produtivo. Analise a transcrição e retorne um JSON com exatamente duas chaves:
+- "summary": resumo conciso em Markdown com títulos (## Resumo, ## Pontos Principais) e listas
+- "actionItems": array de strings com as tarefas/ações identificadas (máximo 10 itens, frases curtas e diretas no infinitivo)
+
+Se não houver tarefas identificadas, retorne "actionItems" como array vazio.
+
+Exemplo de resposta válida:
+{
+  "summary": "## Resumo\\nReunião sobre lançamento do produto...\\n\\n## Pontos Principais\\n- Prazo definido para 15/03",
+  "actionItems": ["Enviar proposta para o cliente", "Marcar reunião de follow-up com o time"]
+}
+
+Responda SEMPRE em Português do Brasil.`,
         },
         {
           role: "user",
@@ -40,11 +51,21 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    const summaryText = completion.choices[0].message.content;
+    let summary = "";
+    let actionItems: string[] = [];
 
-    return NextResponse.json({ 
+    try {
+      const parsed = JSON.parse(completion.choices[0].message.content || "{}");
+      summary = parsed.summary || "";
+      actionItems = Array.isArray(parsed.actionItems) ? parsed.actionItems : [];
+    } catch {
+      summary = completion.choices[0].message.content || "";
+    }
+
+    return NextResponse.json({
       transcription: transcriptText,
-      summary: summaryText
+      summary,
+      actionItems,
     });
 
   } catch (error: unknown) {
