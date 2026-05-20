@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -10,12 +9,9 @@ import {
   Circle,
   Clock,
   Flame,
-  LayoutDashboard,
   Mic,
-  PenTool,
   Target,
   Calendar,
-  Settings,
   Plus,
   X,
   Square,
@@ -350,26 +346,7 @@ export default function Dashboard() {
   if (!mounted) return null;
 
   return (
-    <div className="flex h-full w-full bg-background text-foreground overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-20 glass border-r border-border flex flex-col items-center py-8 gap-8 relative z-10">
-        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-xl shadow-[0_0_15px_rgba(139,92,246,0.5)]">
-          NL
-        </div>
-        <nav className="flex flex-col gap-6 mt-8 text-muted-foreground">
-          <button className="p-3 rounded-xl bg-white/5 text-primary"><LayoutDashboard size={22} /></button>
-          <button className="p-3 rounded-xl hover:bg-white/5 hover:text-white transition-all"><Target size={22} /></button>
-          <button className="p-3 rounded-xl hover:bg-white/5 hover:text-white transition-all"><Calendar size={22} /></button>
-          <button className="p-3 rounded-xl hover:bg-white/5 hover:text-white transition-all"><PenTool size={22} /></button>
-        </nav>
-          <div className="mt-auto flex flex-col gap-6 text-muted-foreground">
-          <button className="p-3 rounded-xl hover:bg-white/5 hover:text-white transition-all"><Settings size={22} /></button>
-          <div className="w-10 h-10 rounded-full bg-secondary border border-border overflow-hidden relative">
-             <Image src="https://ui-avatars.com/api/?name=Lucas+Machado&background=27272a&color=fff" alt="User" fill className="object-cover" />
-          </div>
-        </div>
-      </aside>
-
+    <>
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-8 relative z-0">
         {/* Gradients */}
@@ -1098,6 +1075,6 @@ export default function Dashboard() {
           </>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }

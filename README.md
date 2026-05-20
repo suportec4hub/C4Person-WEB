@@ -58,13 +58,19 @@ O **C4 Person** centraliza os pilares essenciais da rotina em uma única interfa
 src/
 ├── app/
 │   ├── api/
+│   │   ├── chat/
+│   │   │   └── route.ts          # Chat com IA sobre os dados do usuário
 │   │   └── process-audio/
-│   │       └── route.ts      # Endpoint de transcrição e resumo de áudio
-│   ├── layout.tsx             # Layout raiz
-│   ├── page.tsx               # Dashboard principal (todas as features)
-│   └── globals.css            # Tema escuro, variáveis CSS, glassmorphism
+│   │       └── route.ts          # Transcrição e resumo de reunião (Whisper + GPT)
+│   ├── goals/
+│   │   └── page.tsx              # Nexus — Metas e marcos de progresso
+│   ├── layout.tsx                # Layout raiz com Sidebar compartilhada
+│   ├── page.tsx                  # Dashboard principal
+│   └── globals.css               # Tema escuro, variáveis CSS, glassmorphism
+├── components/
+│   └── Sidebar.tsx               # Navegação lateral compartilhada
 └── lib/
-    └── supabase.ts            # Inicialização do client Supabase
+    └── supabase.ts               # Inicialização do client Supabase
 ```
 
 ---
@@ -116,6 +122,29 @@ create table notes (
   transcription  text,
   summary        text,
   created_at     timestamptz not null default now()
+);
+```
+
+### `goals`
+```sql
+create table goals (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null,
+  description text,
+  target_date date,
+  color       text not null default '#8b5cf6',
+  created_at  timestamptz not null default now()
+);
+```
+
+### `milestones`
+```sql
+create table milestones (
+  id         uuid primary key default gen_random_uuid(),
+  goal_id    uuid references goals(id) on delete cascade,
+  title      text not null,
+  is_done    boolean not null default false,
+  created_at timestamptz not null default now()
 );
 ```
 
