@@ -5,14 +5,14 @@ import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { 
-  CheckCircle2, 
-  Circle, 
-  Clock, 
-  Flame, 
-  LayoutDashboard, 
-  Mic, 
-  PenTool, 
+import {
+  CheckCircle2,
+  Circle,
+  Clock,
+  Flame,
+  LayoutDashboard,
+  Mic,
+  PenTool,
   Target,
   Calendar,
   Settings,
@@ -21,9 +21,11 @@ import {
   Square,
   Wallet,
   TrendingUp,
+  TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
-  Loader2
+  Loader2,
+  Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -47,6 +49,7 @@ export default function Dashboard() {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskTime, setNewTaskTime] = useState("");
+  const [newTaskPriority, setNewTaskPriority] = useState<'normal' | 'alta'>('normal');
 
   // Estados de Hábitos e Transações
   const [habits, setHabits] = useState<any[]>([]);
@@ -84,16 +87,18 @@ export default function Dashboard() {
     await supabase.from('tasks').update({ is_done: !currentStatus }).eq('id', id);
   };
 
-  const toggleHabit = async (id: string, currentStatus: boolean) => {
-    setHabits(habits.map(h => h.id === id ? { ...h, is_completed_today: !currentStatus } : h));
-    await supabase.from('habits').update({ is_completed_today: !currentStatus }).eq('id', id);
+  const toggleHabit = async (id: string, currentStatus: boolean, currentStreak: number) => {
+    const newStatus = !currentStatus;
+    const newStreak = newStatus ? currentStreak + 1 : Math.max(0, currentStreak - 1);
+    setHabits(habits.map(h => h.id === id ? { ...h, is_completed_today: newStatus, streak: newStreak } : h));
+    await supabase.from('habits').update({ is_completed_today: newStatus, streak: newStreak }).eq('id', id);
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     
-    const newTask = { title: newTaskTitle, time: newTaskTime || "Livre", is_done: false, priority: 'normal' };
+    const newTask = { title: newTaskTitle, time: newTaskTime || "Livre", is_done: false, priority: newTaskPriority };
     
     // Optimistic update
     const tempId = Date.now().toString();
@@ -101,6 +106,7 @@ export default function Dashboard() {
     setShowTaskModal(false);
     setNewTaskTitle("");
     setNewTaskTime("");
+    setNewTaskPriority('normal');
 
     const { data, error } = await supabase.from('tasks').insert([newTask]).select();
     if (data) {
@@ -138,8 +144,22 @@ export default function Dashboard() {
     if (data) setTransactions(prev => prev.map(t => t.id === tempId ? data[0] : t));
   };
 
+  const deleteTask = async (id: string) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+    await supabase.from('tasks').delete().eq('id', id);
+  };
+
+  const deleteHabit = async (id: string) => {
+    setHabits(prev => prev.filter(h => h.id !== id));
+    await supabase.from('habits').delete().eq('id', id);
+  };
+
+  const deleteTransaction = async (id: string) => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    await supabase.from('transactions').delete().eq('id', id);
+  };
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     fetchTasks();
     fetchHabits();
@@ -212,7 +232,10 @@ export default function Dashboard() {
         body: formData,
       });
 
-      if (!response.ok) throw new Error("Falha na API da OpenAI");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Falha ao processar o áudio.");
+      }
       
       const data = await response.json();
       setResult(data);
@@ -328,8 +351,14 @@ export default function Dashboard() {
                   <h4 className={`text-xl font-medium mb-1 ${topPriorityTask.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{topPriorityTask.title}</h4>
                   <p className="text-muted-foreground text-sm">{topPriorityTask.time && topPriorityTask.time !== 'Livre' ? `Marcado para ${topPriorityTask.time}` : 'Sem horário definido'}</p>
                 </div>
-                <div className="ml-auto bg-primary/20 text-primary text-xs font-medium px-3 py-1 rounded-full">
-                  Principal
+                <div className="ml-auto flex items-center gap-2">
+                  {topPriorityTask.priority === 'alta' && (
+                    <div className="bg-red-500/20 text-red-400 text-xs font-medium px-3 py-1 rounded-full border border-red-500/30">Alta</div>
+                  )}
+                  <div className="bg-primary/20 text-primary text-xs font-medium px-3 py-1 rounded-full">Principal</div>
+                  <button onClick={(e) => { e.stopPropagation(); deleteTask(topPriorityTask.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
             ) : (
@@ -344,14 +373,20 @@ export default function Dashboard() {
                 <p className="text-sm text-muted-foreground italic">Nenhuma tarefa. Adicione uma nova!</p>
               ) : (
                 otherTasks.map((task) => (
-                  <li 
-                    key={task.id} 
+                  <li
+                    key={task.id}
                     onClick={() => toggleTask(task.id, task.is_done)}
-                    className={`flex items-center gap-3 p-3 rounded-lg border border-white/5 hover:bg-white/5 transition-colors ${task.is_done ? 'opacity-50' : ''} cursor-pointer`}
+                    className={`group flex items-center gap-3 p-3 rounded-lg border border-white/5 hover:bg-white/5 transition-colors ${task.is_done ? 'opacity-50' : ''} cursor-pointer`}
                   >
                     {task.is_done ? <CheckCircle2 size={20} className="text-accent" /> : <Circle size={20} className="text-muted-foreground" />}
                     <span className={`flex-1 ${task.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{task.title}</span>
+                    {task.priority === 'alta' && (
+                      <span className="text-xs font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full border border-red-500/20">Alta</span>
+                    )}
                     <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock size={12}/> {task.time || "Livre"}</span>
+                    <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
+                      <Trash2 size={14} />
+                    </button>
                   </li>
                 ))
               )}
@@ -380,7 +415,7 @@ export default function Dashboard() {
                   Hábitos
                 </h3>
                 <span className="text-xs font-medium text-orange-500 bg-orange-500/10 px-2 py-1 rounded-md border border-orange-500/20">
-                  Lvl 12
+                  Lvl {Math.floor(habits.reduce((acc, h) => acc + (h.streak || 0), 0) / 7) + 1}
                 </span>
               </div>
               
@@ -389,15 +424,20 @@ export default function Dashboard() {
                   <p className="text-sm text-muted-foreground italic">Nenhum hábito cadastrado.</p>
                 ) : (
                   habits.map((habit) => (
-                    <div key={habit.id} onClick={() => toggleHabit(habit.id, habit.is_completed_today)} className="flex items-center justify-between group cursor-pointer">
+                    <div key={habit.id} onClick={() => toggleHabit(habit.id, habit.is_completed_today, habit.streak)} className="flex items-center justify-between group cursor-pointer">
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${habit.is_completed_today ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-secondary text-muted-foreground border border-white/5 group-hover:border-white/20'}`}>
                           {habit.is_completed_today && <CheckCircle2 size={16} />}
                         </div>
                         <span className={habit.is_completed_today ? 'text-white/80' : 'text-white'}>{habit.name}</span>
                       </div>
-                      <div className="flex items-center gap-1 text-xs font-medium text-orange-400">
-                        <Flame size={12} /> {habit.streak}
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 text-xs font-medium text-orange-400">
+                          <Flame size={12} /> {habit.streak}
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); deleteHabit(habit.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5">
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
                   ))
@@ -452,9 +492,10 @@ export default function Dashboard() {
             {/* Saldo Atual */}
             <div className="bg-background/40 border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
               <p className="text-muted-foreground text-sm font-medium mb-2">Saldo Total</p>
-              <h4 className="text-3xl font-bold text-white tracking-tight">{formatCurrency(totalBalance)}</h4>
-              <div className="mt-4 flex items-center gap-2 text-xs font-medium text-emerald-400 bg-emerald-400/10 w-fit px-2 py-1 rounded-md">
-                <TrendingUp size={14} /> Atualizado
+              <h4 className={`text-3xl font-bold tracking-tight ${totalBalance < 0 ? 'text-red-400' : 'text-white'}`}>{formatCurrency(totalBalance)}</h4>
+              <div className={`mt-4 flex items-center gap-2 text-xs font-medium w-fit px-2 py-1 rounded-md ${totalBalance < 0 ? 'text-red-400 bg-red-400/10' : 'text-emerald-400 bg-emerald-400/10'}`}>
+                {totalBalance < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
+                {totalBalance < 0 ? 'Saldo Negativo' : 'Atualizado'}
               </div>
             </div>
 
@@ -493,17 +534,22 @@ export default function Dashboard() {
                   <p className="text-sm text-muted-foreground italic">Nenhuma transação.</p>
                 ) : (
                   transactions.slice(0, 4).map((t) => (
-                    <div key={t.id} className="flex items-center justify-between">
+                    <div key={t.id} className="group flex items-center justify-between">
                       <div>
                         <p className="text-sm font-medium text-white">{t.name}</p>
                         <p className="text-xs text-muted-foreground">
                           {t.transaction_date ? format(new Date(t.transaction_date), "d MMM", { locale: ptBR }) : 'Hoje'}
                         </p>
                       </div>
-                      <span className={`text-sm font-bold ${t.type === 'in' ? 'text-emerald-400' : 'text-white'}`}>
-                        {t.type === 'in' ? '+ ' : '- '}
-                        {formatCurrency(Number(t.amount))}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold ${t.type === 'in' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {t.type === 'in' ? '+ ' : '- '}
+                          {formatCurrency(Number(t.amount))}
+                        </span>
+                        <button onClick={() => deleteTransaction(t.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -645,15 +691,23 @@ export default function Dashboard() {
                 
                 <div>
                   <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Horário (Opcional)</label>
-                  <input 
-                    type="time" 
+                  <input
+                    type="time"
                     value={newTaskTime}
                     onChange={(e) => setNewTaskTime(e.target.value)}
                     className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors [color-scheme:dark]"
                   />
                 </div>
-                
-                <button 
+
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Prioridade</label>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setNewTaskPriority('normal')} className={`flex-1 py-2 rounded-lg font-medium border text-sm transition-colors ${newTaskPriority === 'normal' ? 'bg-primary/20 text-primary border-primary/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>Normal</button>
+                    <button type="button" onClick={() => setNewTaskPriority('alta')} className={`flex-1 py-2 rounded-lg font-medium border text-sm transition-colors ${newTaskPriority === 'alta' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>Alta</button>
+                  </div>
+                </div>
+
+                <button
                   type="submit"
                   disabled={!newTaskTitle.trim()}
                   className="mt-2 w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
