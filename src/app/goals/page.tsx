@@ -14,6 +14,7 @@ import {
   Circle,
   Calendar,
   Flag,
+  ClipboardList,
 } from "lucide-react";
 
 interface Goal {
@@ -42,10 +43,18 @@ const COLORS = [
   "#ec4899",
 ];
 
+interface Task {
+  id: string;
+  title: string;
+  is_done: boolean;
+  goal_id: string | null;
+}
+
 export default function GoalsPage() {
   const [mounted, setMounted] = useState(false);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const [showModal, setShowModal] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -54,14 +63,17 @@ export default function GoalsPage() {
   const [newColor, setNewColor] = useState(COLORS[0]);
 
   const [milestoneInputs, setMilestoneInputs] = useState<Record<string, string>>({});
+  const [taskInputs, setTaskInputs] = useState<Record<string, string>>({});
 
   const fetchAll = async () => {
-    const [{ data: goalsData }, { data: msData }] = await Promise.all([
+    const [{ data: goalsData }, { data: msData }, { data: tasksData }] = await Promise.all([
       supabase.from("goals").select("*").order("created_at", { ascending: false }),
       supabase.from("milestones").select("*").order("created_at", { ascending: true }),
+      supabase.from("tasks").select("id,title,is_done,goal_id").order("created_at", { ascending: true }),
     ]);
     if (goalsData) setGoals(goalsData);
     if (msData) setMilestones(msData);
+    if (tasksData) setTasks(tasksData as Task[]);
   };
 
   useEffect(() => {
@@ -125,6 +137,32 @@ export default function GoalsPage() {
   const deleteMilestone = async (id: string) => {
     setMilestones((prev) => prev.filter((m) => m.id !== id));
     await supabase.from("milestones").delete().eq("id", id);
+  };
+
+  const getGoalTasks = (goalId: string) => tasks.filter((t) => t.goal_id === goalId);
+
+  const addTaskToGoal = async (goalId: string) => {
+    const title = taskInputs[goalId]?.trim();
+    if (!title) return;
+    setTaskInputs((prev) => ({ ...prev, [goalId]: "" }));
+    const tempId = `temp-task-${Date.now()}`;
+    const tempTask: Task = { id: tempId, title, is_done: false, goal_id: goalId };
+    setTasks((prev) => [...prev, tempTask]);
+    const { data } = await supabase
+      .from("tasks")
+      .insert([{ title, time: "Livre", is_done: false, priority: "normal", goal_id: goalId }])
+      .select();
+    if (data) setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...data[0], goal_id: goalId } : t)));
+  };
+
+  const toggleGoalTask = async (id: string, current: boolean) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, is_done: !current } : t)));
+    await supabase.from("tasks").update({ is_done: !current }).eq("id", id);
+  };
+
+  const deleteGoalTask = async (id: string) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    await supabase.from("tasks").delete().eq("id", id);
   };
 
   if (!mounted) return null;
@@ -203,13 +241,17 @@ export default function GoalsPage() {
                 milestones={getMilestones(goal.id)}
                 progress={getProgress(goal.id)}
                 milestoneInput={milestoneInputs[goal.id] || ""}
-                onMilestoneInputChange={(v) =>
-                  setMilestoneInputs((prev) => ({ ...prev, [goal.id]: v }))
-                }
+                onMilestoneInputChange={(v) => setMilestoneInputs((prev) => ({ ...prev, [goal.id]: v }))}
                 onAddMilestone={() => addMilestone(goal.id)}
                 onToggleMilestone={toggleMilestone}
                 onDeleteMilestone={deleteMilestone}
                 onDeleteGoal={() => deleteGoal(goal.id)}
+                goalTasks={getGoalTasks(goal.id)}
+                taskInput={taskInputs[goal.id] || ""}
+                onTaskInputChange={(v) => setTaskInputs((prev) => ({ ...prev, [goal.id]: v }))}
+                onAddTask={() => addTaskToGoal(goal.id)}
+                onToggleTask={toggleGoalTask}
+                onDeleteTask={deleteGoalTask}
                 delay={idx * 0.05}
               />
             ))}
@@ -231,13 +273,17 @@ export default function GoalsPage() {
                 milestones={getMilestones(goal.id)}
                 progress={100}
                 milestoneInput={milestoneInputs[goal.id] || ""}
-                onMilestoneInputChange={(v) =>
-                  setMilestoneInputs((prev) => ({ ...prev, [goal.id]: v }))
-                }
+                onMilestoneInputChange={(v) => setMilestoneInputs((prev) => ({ ...prev, [goal.id]: v }))}
                 onAddMilestone={() => addMilestone(goal.id)}
                 onToggleMilestone={toggleMilestone}
                 onDeleteMilestone={deleteMilestone}
                 onDeleteGoal={() => deleteGoal(goal.id)}
+                goalTasks={getGoalTasks(goal.id)}
+                taskInput={taskInputs[goal.id] || ""}
+                onTaskInputChange={(v) => setTaskInputs((prev) => ({ ...prev, [goal.id]: v }))}
+                onAddTask={() => addTaskToGoal(goal.id)}
+                onToggleTask={toggleGoalTask}
+                onDeleteTask={deleteGoalTask}
                 delay={idx * 0.05}
               />
             ))}
@@ -362,6 +408,12 @@ interface GoalCardProps {
   onToggleMilestone: (id: string, current: boolean) => void;
   onDeleteMilestone: (id: string) => void;
   onDeleteGoal: () => void;
+  goalTasks: Task[];
+  taskInput: string;
+  onTaskInputChange: (v: string) => void;
+  onAddTask: () => void;
+  onToggleTask: (id: string, current: boolean) => void;
+  onDeleteTask: (id: string) => void;
   delay: number;
 }
 
@@ -375,6 +427,12 @@ function GoalCard({
   onToggleMilestone,
   onDeleteMilestone,
   onDeleteGoal,
+  goalTasks,
+  taskInput,
+  onTaskInputChange,
+  onAddTask,
+  onToggleTask,
+  onDeleteTask,
   delay,
 }: GoalCardProps) {
   const done = milestones.filter((m) => m.is_done).length;
@@ -497,6 +555,59 @@ function GoalCard({
         >
           <Plus size={16} />
         </button>
+      </div>
+
+      {/* Tarefas vinculadas */}
+      <div className="pt-3 border-t border-white/5 relative z-10">
+        <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <ClipboardList size={11} /> Tarefas
+          {goalTasks.length > 0 && (
+            <span className="ml-1 text-xs font-semibold" style={{ color: goal.color }}>
+              {goalTasks.filter(t => t.is_done).length}/{goalTasks.length}
+            </span>
+          )}
+        </p>
+
+        {goalTasks.length > 0 && (
+          <div className="space-y-1.5 mb-2">
+            {goalTasks.map(t => (
+              <div key={t.id} className="flex items-center gap-2 group/task">
+                <button onClick={() => onToggleTask(t.id, t.is_done)} className="flex-shrink-0 text-muted-foreground hover:text-white transition-colors">
+                  {t.is_done
+                    ? <CheckCircle2 size={14} className="text-accent" />
+                    : <Circle size={14} />}
+                </button>
+                <span className={`text-xs flex-1 ${t.is_done ? "line-through text-muted-foreground" : "text-white/80"}`}>
+                  {t.title}
+                </span>
+                <button
+                  onClick={() => onDeleteTask(t.id)}
+                  className="opacity-0 group-hover/task:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5 flex-shrink-0"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={taskInput}
+            onChange={(e) => onTaskInputChange(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && onAddTask()}
+            placeholder="Adicionar tarefa…"
+            className="flex-1 bg-transparent text-xs text-white placeholder:text-muted-foreground/40 outline-none"
+          />
+          <button
+            onClick={onAddTask}
+            disabled={!taskInput.trim()}
+            className="text-muted-foreground hover:text-white disabled:opacity-20 transition-colors flex-shrink-0"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
       </div>
     </motion.div>
   );

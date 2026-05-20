@@ -62,14 +62,19 @@ src/
 │   │   │   └── route.ts          # Chat com IA sobre os dados do usuário
 │   │   └── process-audio/
 │   │       └── route.ts          # Transcrição e resumo de reunião (Whisper + GPT)
+│   ├── finance/
+│   │   └── page.tsx              # Nectar — Finanças completas com gráficos
 │   ├── goals/
-│   │   └── page.tsx              # Nexus — Metas e marcos de progresso
+│   │   └── page.tsx              # Nexus — Metas, marcos e tarefas vinculadas
+│   ├── notes/
+│   │   └── page.tsx              # Anotar — Histórico de notas e reuniões
 │   ├── layout.tsx                # Layout raiz com Sidebar compartilhada
 │   ├── page.tsx                  # Dashboard principal
 │   └── globals.css               # Tema escuro, variáveis CSS, glassmorphism
 ├── components/
-│   └── Sidebar.tsx               # Navegação lateral compartilhada
+│   └── Sidebar.tsx               # Navegação lateral (Dashboard/Nexus/Nectar/Anotar)
 └── lib/
+    ├── categories.ts             # Categorias de transações com cores
     └── supabase.ts               # Inicialização do client Supabase
 ```
 
@@ -146,6 +151,20 @@ create table milestones (
   is_done    boolean not null default false,
   created_at timestamptz not null default now()
 );
+```
+
+### Migrações adicionais (rodar após criar as tabelas base)
+
+**Categoria nas transações (Nectar):**
+```sql
+alter table transactions
+  add column if not exists category text default 'Outros';
+```
+
+**Vínculo de tarefas a metas (Nexus):**
+```sql
+alter table tasks
+  add column if not exists goal_id uuid references goals(id) on delete set null;
 ```
 
 ---

@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Target, Calendar, PenTool, Settings } from "lucide-react";
+import { LayoutDashboard, Target, Wallet, PenTool, Settings } from "lucide-react";
 
 const NAV = [
-  { href: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/goals", icon: Target, label: "Nexus · Metas" },
-  { href: "/calendar", icon: Calendar, label: "Agenda" },
-  { href: "/notes", icon: PenTool, label: "Notas" },
+  { href: "/",        icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/goals",   icon: Target,          label: "Nexus · Metas" },
+  { href: "/finance", icon: Wallet,          label: "Nectar · Finanças" },
+  { href: "/notes",   icon: PenTool,         label: "Anotar · Notas" },
 ];
 
 export function Sidebar() {
@@ -41,14 +41,12 @@ export function Sidebar() {
         <button className="p-3 rounded-xl hover:bg-white/5 hover:text-white transition-all" title="Configurações">
           <Settings size={22} />
         </button>
-        <div className="w-10 h-10 rounded-full bg-secondary border border-border overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://ui-avatars.com/api/?name=Lucas+Machado&background=27272a&color=fff"
-            alt="User"
-            className="w-full h-full object-cover"
-          />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="https://ui-avatars.com/api/?name=Lucas+Machado&background=27272a&color=fff"
+          alt="User"
+          className="w-10 h-10 rounded-full border border-border object-cover"
+        />
       </div>
     </aside>
   );
