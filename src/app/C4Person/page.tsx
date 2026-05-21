@@ -30,8 +30,16 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h >= 0 && h < 12) return "Bom dia";
+  if (h >= 12 && h < 18) return "Boa tarde";
+  return "Boa noite";
+}
+
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
+  const [firstName, setFirstName] = useState("");
   const today = new Date();
 
   // Estados do Gravador
@@ -174,6 +182,14 @@ export default function Dashboard() {
     fetchTasks();
     fetchHabits();
     fetchTransactions();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("profiles").select("full_name").eq("id", user.id).single()
+        .then(({ data }) => {
+          const name = data?.full_name || user.email?.split("@")[0] || "";
+          setFirstName(name.split(" ")[0]);
+        });
+    });
   }, []);
 
   // Timer para o gravador
@@ -362,7 +378,7 @@ export default function Dashboard() {
             <h2 className="text-muted-foreground text-sm font-medium mb-1 uppercase tracking-wider">
               {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
             </h2>
-            <h1 className="text-4xl font-bold tracking-tight">Bom dia, Lucas</h1>
+            <h1 className="text-4xl font-bold tracking-tight">{getGreeting()}{firstName ? `, ${firstName}` : ""}</h1>
           </motion.div>
           
           <div className="flex items-center gap-3">

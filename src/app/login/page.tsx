@@ -4,13 +4,15 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft } from "lucide-react";
+import { Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft, User, Calendar } from "lucide-react";
 import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<"login" | "signup">("login");
+  const [fullName, setFullName] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -37,8 +39,16 @@ export default function LoginPage() {
         router.push("/C4Person");
         router.refresh();
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        if (!fullName.trim()) { setError("Informe seu nome completo."); setLoading(false); return; }
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
+        if (data.user) {
+          await supabase.from("profiles").upsert({
+            id: data.user.id,
+            full_name: fullName.trim(),
+            birth_date: birthDate || null,
+          });
+        }
         setSuccessMsg("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
       }
     } catch (err: unknown) {
@@ -102,6 +112,45 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {/* Nome completo — só no cadastro */}
+            <AnimatePresence>
+              {mode === "signup" && (
+                <motion.div
+                  key="signup-fields"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="flex flex-col gap-4 overflow-hidden"
+                >
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Nome completo</label>
+                    <div className="relative">
+                      <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Seu nome completo"
+                        className="w-full bg-background border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Data de nascimento</label>
+                    <div className="relative">
+                      <Calendar size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="date"
+                        value={birthDate}
+                        onChange={(e) => setBirthDate(e.target.value)}
+                        className="w-full bg-background border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors [color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Email */}
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-1.5 block">E-mail</label>
