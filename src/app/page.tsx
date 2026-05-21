@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2, Flame, Wallet, Mic, Target, ArrowRight, Zap, Shield, Brain } from "lucide-react";
+import { CheckoutButton } from "@/components/CheckoutButton";
 
 export default function LandingPage() {
   return (
@@ -227,12 +228,9 @@ export default function LandingPage() {
                 </div>
               ))}
             </div>
-            <Link
-              href="/login"
-              className="block w-full bg-primary hover:bg-primary/90 text-white py-3.5 rounded-xl font-semibold text-center transition-all shadow-[0_4px_20px_rgba(139,92,246,0.3)]"
-            >
-              Criar conta grátis
-            </Link>
+            <CheckoutButton className="block w-full bg-primary hover:bg-primary/90 text-white py-3.5 rounded-xl font-semibold text-center transition-all shadow-[0_4px_20px_rgba(139,92,246,0.3)]">
+              Assinar agora — R$29,90/mês
+            </CheckoutButton>
           </div>
         </div>
       </section>
