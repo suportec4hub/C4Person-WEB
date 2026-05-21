@@ -52,11 +52,14 @@ export default function LoginClient() {
         setSuccessMsg("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Erro inesperado.";
-      if (msg.includes("Invalid login credentials")) setError("E-mail ou senha incorretos.");
-      else if (msg.includes("User already registered")) setError("Este e-mail já está cadastrado.");
-      else if (msg.includes("Password should be at least")) setError("A senha deve ter no mínimo 6 caracteres.");
-      else setError(msg);
+      const msg = (err instanceof Error ? err.message : "Erro inesperado.").toLowerCase();
+      if (msg.includes("invalid login credentials")) setError("E-mail ou senha incorretos.");
+      else if (msg.includes("user already registered") || msg.includes("already registered")) setError("Este e-mail já está cadastrado. Faça login.");
+      else if (msg.includes("password should be at least")) setError("A senha deve ter no mínimo 6 caracteres.");
+      else if (msg.includes("rate limit") || msg.includes("email rate limit")) setError("Muitas tentativas. Aguarde alguns minutos e tente novamente.");
+      else if (msg.includes("invalid email")) setError("E-mail inválido. Verifique e tente novamente.");
+      else if (msg.includes("network") || msg.includes("fetch")) setError("Erro de conexão. Verifique sua internet.");
+      else setError("Erro inesperado. Tente novamente.");
     } finally {
       setLoading(false);
     }
