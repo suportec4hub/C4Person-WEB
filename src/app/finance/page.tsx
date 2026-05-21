@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
+
 import { format, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -35,13 +35,9 @@ export default function FinancePage() {
 
   useEffect(() => {
     setMounted(true);
-    supabase
-      .from("transactions")
-      .select("*")
-      .order("transaction_date", { ascending: false })
-      .then(({ data }) => {
-        if (data) setTransactions(data as Transaction[]);
-      });
+    fetch("/api/transactions")
+      .then(res => res.json())
+      .then(data => { if (Array.isArray(data)) setTransactions(data as Transaction[]); });
   }, []);
 
   /* ── derived totals ── */
@@ -111,7 +107,6 @@ export default function FinancePage() {
     e.preventDefault();
     const amount = parseFloat(newAmount.replace(",", "."));
     if (!newName.trim() || isNaN(amount)) return;
-
     const payload = {
       name: newName,
       amount,
@@ -119,26 +114,20 @@ export default function FinancePage() {
       category: newCategory,
       transaction_date: new Date().toISOString(),
     };
-
     setShowModal(false);
     setNewName(""); setNewAmount(""); setNewType("out"); setNewCategory("Outros");
-
-    const { data, error } = await supabase.from("transactions").insert([payload]).select();
-    if (data) {
-      setTransactions(prev => [data[0] as Transaction, ...prev]);
-    } else if (error?.message?.includes("category")) {
-      // Column doesn't exist yet — retry without category
-      const { data: d2 } = await supabase
-        .from("transactions")
-        .insert([{ name: payload.name, amount, type: newType, transaction_date: payload.transaction_date }])
-        .select();
-      if (d2) setTransactions(prev => [d2[0] as Transaction, ...prev]);
-    }
+    const res = await fetch("/api/transactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.id) setTransactions(prev => [data as Transaction, ...prev]);
   };
 
   const deleteTx = async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
-    await supabase.from("transactions").delete().eq("id", id);
+    await fetch(`/api/transactions/${id}`, { method: "DELETE" });
   };
 
   const fmt = (v: number) =>

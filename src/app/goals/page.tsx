@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -66,14 +66,19 @@ export default function GoalsPage() {
   const [taskInputs, setTaskInputs] = useState<Record<string, string>>({});
 
   const fetchAll = async () => {
-    const [{ data: goalsData }, { data: msData }, { data: tasksData }] = await Promise.all([
-      supabase.from("goals").select("*").order("created_at", { ascending: false }),
-      supabase.from("milestones").select("*").order("created_at", { ascending: true }),
-      supabase.from("tasks").select("id,title,is_done,goal_id").order("created_at", { ascending: true }),
+    const [goalsRes, msRes, tasksRes] = await Promise.all([
+      fetch("/api/goals"),
+      fetch("/api/milestones"),
+      fetch("/api/tasks"),
     ]);
-    if (goalsData) setGoals(goalsData);
-    if (msData) setMilestones(msData);
-    if (tasksData) setTasks(tasksData as Task[]);
+    const [goalsData, msData, tasksData] = await Promise.all([
+      goalsRes.json(),
+      msRes.json(),
+      tasksRes.json(),
+    ]);
+    if (Array.isArray(goalsData)) setGoals(goalsData);
+    if (Array.isArray(msData)) setMilestones(msData);
+    if (Array.isArray(tasksData)) setTasks(tasksData as Task[]);
   };
 
   useEffect(() => {
@@ -92,51 +97,57 @@ export default function GoalsPage() {
   const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-
     const payload = {
       title: newTitle,
       description: newDescription || null,
       target_date: newTargetDate || null,
       color: newColor,
     };
-
     setShowModal(false);
-    setNewTitle("");
-    setNewDescription("");
-    setNewTargetDate("");
-    setNewColor(COLORS[0]);
-
-    const { data } = await supabase.from("goals").insert([payload]).select();
-    if (data) setGoals((prev) => [data[0], ...prev]);
+    setNewTitle(""); setNewDescription(""); setNewTargetDate(""); setNewColor(COLORS[0]);
+    const res = await fetch("/api/goals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.id) setGoals(prev => [data, ...prev]);
   };
 
   const deleteGoal = async (id: string) => {
     setGoals((prev) => prev.filter((g) => g.id !== id));
     setMilestones((prev) => prev.filter((m) => m.goal_id !== id));
-    await supabase.from("goals").delete().eq("id", id);
+    await fetch(`/api/goals/${id}`, { method: "DELETE" });
   };
 
   const addMilestone = async (goalId: string) => {
     const title = milestoneInputs[goalId]?.trim();
     if (!title) return;
-
     setMilestoneInputs((prev) => ({ ...prev, [goalId]: "" }));
     const tempId = `temp-${Date.now()}`;
     const tempMs: Milestone = { id: tempId, goal_id: goalId, title, is_done: false, created_at: new Date().toISOString() };
     setMilestones((prev) => [...prev, tempMs]);
-
-    const { data } = await supabase.from("milestones").insert([{ goal_id: goalId, title, is_done: false }]).select();
-    if (data) setMilestones((prev) => prev.map((m) => (m.id === tempId ? data[0] : m)));
+    const res = await fetch("/api/milestones", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goal_id: goalId, title, is_done: false }),
+    });
+    const data = await res.json();
+    if (data.id) setMilestones((prev) => prev.map((m) => (m.id === tempId ? data : m)));
   };
 
   const toggleMilestone = async (id: string, current: boolean) => {
     setMilestones((prev) => prev.map((m) => (m.id === id ? { ...m, is_done: !current } : m)));
-    await supabase.from("milestones").update({ is_done: !current }).eq("id", id);
+    await fetch(`/api/milestones/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_done: !current }),
+    });
   };
 
   const deleteMilestone = async (id: string) => {
     setMilestones((prev) => prev.filter((m) => m.id !== id));
-    await supabase.from("milestones").delete().eq("id", id);
+    await fetch(`/api/milestones/${id}`, { method: "DELETE" });
   };
 
   const getGoalTasks = (goalId: string) => tasks.filter((t) => t.goal_id === goalId);
@@ -148,21 +159,27 @@ export default function GoalsPage() {
     const tempId = `temp-task-${Date.now()}`;
     const tempTask: Task = { id: tempId, title, is_done: false, goal_id: goalId };
     setTasks((prev) => [...prev, tempTask]);
-    const { data } = await supabase
-      .from("tasks")
-      .insert([{ title, time: "Livre", is_done: false, priority: "normal", goal_id: goalId }])
-      .select();
-    if (data) setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...data[0], goal_id: goalId } : t)));
+    const res = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, time: "Livre", is_done: false, priority: "normal", goal_id: goalId }),
+    });
+    const data = await res.json();
+    if (data.id) setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...data, goal_id: goalId } : t)));
   };
 
   const toggleGoalTask = async (id: string, current: boolean) => {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, is_done: !current } : t)));
-    await supabase.from("tasks").update({ is_done: !current }).eq("id", id);
+    await fetch(`/api/tasks/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_done: !current }),
+    });
   };
 
   const deleteGoalTask = async (id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
-    await supabase.from("tasks").delete().eq("id", id);
+    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
   };
 
   if (!mounted) return null;

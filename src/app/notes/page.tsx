@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
+
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,11 +24,9 @@ export default function NotesPage() {
 
   useEffect(() => {
     setMounted(true);
-    supabase
-      .from("notes")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => { if (data) setNotes(data as Note[]); });
+    fetch("/api/notes")
+      .then(res => res.json())
+      .then(data => { if (Array.isArray(data)) setNotes(data as Note[]); });
   }, []);
 
   const filtered = useMemo(() =>
@@ -41,7 +39,7 @@ export default function NotesPage() {
   const deleteNote = async (id: string) => {
     setNotes(prev => prev.filter(n => n.id !== id));
     if (selected?.id === id) setSelected(null);
-    await supabase.from("notes").delete().eq("id", id);
+    await fetch(`/api/notes/${id}`, { method: "DELETE" });
   };
 
   const openNote = (note: Note) => {
