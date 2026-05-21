@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Target, Wallet, PenTool, LogOut } from "lucide-react";
+import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const NAV = [
@@ -12,7 +12,11 @@ const NAV = [
   { href: "/C4Person/notes",   icon: PenTool,         label: "Anotar · Notas" },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  isAdmin?: boolean;
+}
+
+export function Sidebar({ isAdmin = false }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -45,6 +49,15 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-auto flex flex-col gap-4 text-muted-foreground">
+        {isAdmin && (
+          <Link
+            href="/admin"
+            title="Painel Admin"
+            className="p-3 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-all"
+          >
+            <Shield size={22} />
+          </Link>
+        )}
         <button
           onClick={handleLogout}
           title="Sair"
