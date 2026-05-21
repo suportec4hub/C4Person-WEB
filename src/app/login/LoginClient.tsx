@@ -40,7 +40,11 @@ export default function LoginClient() {
         router.refresh();
       } else {
         if (!fullName.trim()) { setError("Informe seu nome completo."); setLoading(false); return; }
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName.trim() } },
+        });
         if (error) throw error;
         if (data.user) {
           await supabase.from("profiles").upsert({

@@ -186,8 +186,15 @@ export default function Dashboard() {
       if (!user) return;
       supabase.from("profiles").select("full_name").eq("id", user.id).single()
         .then(({ data }) => {
-          const name = data?.full_name || user.email?.split("@")[0] || "";
-          setFirstName(name.split(" ")[0]);
+          const raw =
+            data?.full_name ||
+            (user.user_metadata?.full_name as string | undefined) ||
+            user.email?.split("@")[0] ||
+            "";
+          const parts = raw.trim().split(/\s+/).filter(Boolean);
+          const display =
+            parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1]}` : parts[0] || "";
+          setFirstName(display);
         });
     });
   }, []);
