@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       customerId,
       externalId: `sub_${user.id}`,
       returnUrl: `${appUrl}/C4Person`,
-      completionUrl: `${appUrl}/C4Person?payment=success`,
+      completionUrl: `${appUrl}/obrigado`,
       metadata: { userId: user.id, email: user.email },
     });
 
