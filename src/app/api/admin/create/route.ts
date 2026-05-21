@@ -5,10 +5,13 @@ export async function POST(req: NextRequest) {
   const admin = await verifyAdmin();
   if (!admin) return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
 
-  const { full_name, email, password } = await req.json();
+  const { full_name, email, password, role } = await req.json();
   if (!full_name || !email || !password) {
     return NextResponse.json({ error: "Campos obrigatórios ausentes" }, { status: 400 });
   }
+
+  const validRoles = ["ADMIN_C4HUB", "ADM_PADRAO"];
+  const assignedRole = validRoles.includes(role) ? role : "ADMIN_C4HUB";
 
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
@@ -22,7 +25,7 @@ export async function POST(req: NextRequest) {
   await supabaseAdmin.from("profiles").upsert({
     id: data.user.id,
     full_name,
-    role: "admin",
+    role: assignedRole,
   });
 
   return NextResponse.json({ success: true, userId: data.user.id });

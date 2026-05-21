@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/Sidebar";
+import { TrialBanner } from "@/components/TrialBanner";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
@@ -29,26 +30,46 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("role")
+    .select("role, trial_ends_at, created_at")
     .eq("id", user.id)
     .single();
 
-  const isAdmin = profile?.role === "admin";
+  const isFullAdmin = profile?.role === "ADMIN_C4HUB";
+  const isElevated = profile?.role === "ADMIN_C4HUB" || profile?.role === "ADM_PADRAO";
 
-  if (!isAdmin) {
+  let showTrialBanner = false;
+  let trialEnd: Date | null = null;
+
+  if (!isElevated) {
     const { data: sub } = await supabaseAdmin
       .from("subscriptions")
       .select("status")
       .eq("user_id", user.id)
       .single();
 
-    if (sub?.status !== "active") redirect("/assinar");
+    if (sub?.status !== "active") {
+      if (profile?.trial_ends_at) {
+        trialEnd = new Date(profile.trial_ends_at);
+      } else {
+        const base = profile?.created_at ?? user.created_at;
+        trialEnd = new Date(new Date(base).getTime() + 15 * 24 * 60 * 60 * 1000);
+      }
+
+      if (new Date() > trialEnd) {
+        redirect("/assinar?expired=true");
+      }
+
+      showTrialBanner = true;
+    }
   }
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar isAdmin={isAdmin} />
-      <div className="flex-1 flex flex-col overflow-hidden">{children}</div>
+      <Sidebar isAdmin={isFullAdmin} />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {showTrialBanner && trialEnd && <TrialBanner trialEnd={trialEnd} />}
+        {children}
+      </div>
     </div>
   );
 }

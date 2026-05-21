@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Search, CheckCircle2, XCircle, Shield, User, ToggleLeft, ToggleRight } from "lucide-react";
+import { Loader2, Search, CheckCircle2, XCircle, Shield, User, ToggleLeft, ToggleRight, Crown } from "lucide-react";
 
 interface UserRow {
   id: string;
@@ -11,8 +11,16 @@ interface UserRow {
   role: string;
   created_at: string;
   confirmed: boolean;
+  trial_ends_at: string | null;
   subscription: { status: string; plan: string; current_period_end: string } | null;
 }
+
+const ROLE_LABELS: Record<string, { label: string; color: string }> = {
+  ADMIN_C4HUB: { label: "Admin C4Hub", color: "text-red-400 bg-red-500/10 border-red-500/20" },
+  ADM_PADRAO:  { label: "ADM Padrão",  color: "text-orange-400 bg-orange-500/10 border-orange-500/20" },
+  user:        { label: "Usuário",      color: "text-muted-foreground bg-white/5 border-white/10" },
+  admin:       { label: "Admin",        color: "text-red-400 bg-red-500/10 border-red-500/20" },
+};
 
 export default function AdminUsersPage() {
   const router = useRouter();
@@ -20,6 +28,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [toggling, setToggling] = useState<string | null>(null);
+  const [changingRole, setChangingRole] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/admin/users")
@@ -46,6 +55,24 @@ export default function AdminUsersPage() {
       )
     );
     setToggling(null);
+  };
+
+  const changeRole = async (userId: string, newRole: string) => {
+    setChangingRole(userId);
+    await fetch(`/api/admin/users/${userId}/role`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: newRole }),
+    });
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
+    setChangingRole(null);
+  };
+
+  const getTrialLabel = (u: UserRow) => {
+    if (u.subscription?.status === "active") return null;
+    if (!u.trial_ends_at) return null;
+    const daysLeft = Math.ceil((new Date(u.trial_ends_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return daysLeft > 0 ? `Trial: ${daysLeft}d` : "Trial expirado";
   };
 
   const filtered = users.filter((u) => {
@@ -93,6 +120,10 @@ export default function AdminUsersPage() {
             {filtered.map((u) => {
               const isActive = u.subscription?.status === "active";
               const isTogglingThis = toggling === u.id;
+              const isChangingRoleThis = changingRole === u.id;
+              const roleInfo = ROLE_LABELS[u.role] ?? ROLE_LABELS.user;
+              const trialLabel = getTrialLabel(u);
+
               return (
                 <tr key={u.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
                   <td className="px-5 py-4">
@@ -101,49 +132,75 @@ export default function AdminUsersPage() {
                       <p className="text-muted-foreground text-xs mt-0.5">{u.email}</p>
                     </div>
                   </td>
+
                   <td className="px-5 py-4">
-                    {u.role === "admin" ? (
-                      <span className="inline-flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold px-2.5 py-1 rounded-full">
-                        <Shield size={11} /> Admin
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`inline-flex items-center gap-1.5 border text-xs font-semibold px-2.5 py-1 rounded-full ${roleInfo.color}`}>
+                        {u.role === "ADMIN_C4HUB" || u.role === "admin"
+                          ? <Shield size={11} />
+                          : u.role === "ADM_PADRAO"
+                            ? <Crown size={11} />
+                            : <User size={11} />}
+                        {roleInfo.label}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 bg-white/5 border border-white/10 text-muted-foreground text-xs px-2.5 py-1 rounded-full">
-                        <User size={11} /> Usuário
-                      </span>
-                    )}
+                      {isChangingRoleThis
+                        ? <Loader2 size={12} className="animate-spin text-muted-foreground" />
+                        : (
+                          <select
+                            value={u.role === "admin" ? "ADMIN_C4HUB" : u.role}
+                            onChange={(e) => changeRole(u.id, e.target.value)}
+                            className="bg-background border border-white/10 text-muted-foreground text-xs rounded-lg px-1.5 py-0.5 focus:outline-none focus:border-primary/50 cursor-pointer"
+                          >
+                            <option value="user">Usuário</option>
+                            <option value="ADM_PADRAO">ADM Padrão</option>
+                            <option value="ADMIN_C4HUB">Admin C4Hub</option>
+                          </select>
+                        )}
+                    </div>
                   </td>
+
                   <td className="px-5 py-4 text-muted-foreground text-xs">
                     {new Date(u.created_at).toLocaleDateString("pt-BR")}
                   </td>
+
                   <td className="px-5 py-4">
                     {u.confirmed
                       ? <CheckCircle2 size={16} className="text-emerald-400" />
                       : <XCircle size={16} className="text-muted-foreground" />}
                   </td>
+
                   <td className="px-5 py-4 text-muted-foreground text-xs">
                     {u.subscription?.current_period_end
                       ? new Date(u.subscription.current_period_end).toLocaleDateString("pt-BR")
                       : "—"}
                   </td>
+
                   <td className="px-5 py-4">
-                    <button
-                      onClick={() => toggleSubscription(u.id, u.subscription?.status ?? "inactive")}
-                      disabled={isTogglingThis}
-                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
-                        isActive
-                          ? "bg-emerald-400/10 border-emerald-400/20 text-emerald-400 hover:bg-emerald-400/20"
-                          : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
-                      }`}
-                    >
-                      {isTogglingThis ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : isActive ? (
-                        <ToggleRight size={15} />
-                      ) : (
-                        <ToggleLeft size={15} />
+                    <div className="flex flex-col gap-1 items-start">
+                      <button
+                        onClick={() => toggleSubscription(u.id, u.subscription?.status ?? "inactive")}
+                        disabled={isTogglingThis}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                          isActive
+                            ? "bg-emerald-400/10 border-emerald-400/20 text-emerald-400 hover:bg-emerald-400/20"
+                            : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
+                        }`}
+                      >
+                        {isTogglingThis ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : isActive ? (
+                          <ToggleRight size={15} />
+                        ) : (
+                          <ToggleLeft size={15} />
+                        )}
+                        {isActive ? "Pago" : "Sem assinatura"}
+                      </button>
+                      {trialLabel && (
+                        <span className={`text-xs px-1 ${trialLabel.includes("expirado") ? "text-red-400" : "text-amber-400"}`}>
+                          {trialLabel}
+                        </span>
                       )}
-                      {isActive ? "Pago" : "Sem assinatura"}
-                    </button>
+                    </div>
                   </td>
                 </tr>
               );

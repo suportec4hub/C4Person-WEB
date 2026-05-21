@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { LayoutDashboard, Users, UserPlus, ArrowLeft, Shield } from "lucide-react";
+import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 const NAV = [
   { href: "/admin",        icon: LayoutDashboard, label: "Visão Geral" },
@@ -9,12 +13,38 @@ const NAV = [
 
 export const dynamic = "force-dynamic";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (list) => list.forEach(({ name, value, options }) => cookieStore.set(name, value, options)),
+      },
+    }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.role !== "ADMIN_C4HUB") redirect("/C4Person");
+
   return (
     <div className="min-h-screen bg-background text-foreground flex">
-      {/* Sidebar */}
       <aside className="w-60 border-r border-white/5 flex flex-col shrink-0">
-        {/* Logo */}
         <div className="px-5 py-5 border-b border-white/5">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center">
@@ -22,12 +52,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
             <div>
               <p className="text-white font-bold text-sm">C4 Person</p>
-              <p className="text-red-400 text-xs font-semibold">ADMIN</p>
+              <p className="text-red-400 text-xs font-semibold">ADMIN C4HUB</p>
             </div>
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1">
           {NAV.map(({ href, icon: Icon, label }) => (
             <Link
@@ -41,7 +70,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           ))}
         </nav>
 
-        {/* Back to app */}
         <div className="px-3 py-4 border-t border-white/5">
           <Link
             href="/C4Person"
@@ -53,7 +81,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </aside>
 
-      {/* Content */}
       <main className="flex-1 overflow-auto p-8">{children}</main>
     </div>
   );

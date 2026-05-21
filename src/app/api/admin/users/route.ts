@@ -6,7 +6,7 @@ export async function GET() {
   if (!admin) return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
 
   const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-  const { data: profiles } = await supabaseAdmin.from("profiles").select("id, full_name, role, created_at");
+  const { data: profiles } = await supabaseAdmin.from("profiles").select("id, full_name, role, created_at, trial_ends_at");
   const { data: subs } = await supabaseAdmin.from("subscriptions").select("user_id, status, plan, current_period_end");
 
   const profileMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
@@ -19,6 +19,7 @@ export async function GET() {
     role: profileMap[u.id]?.role ?? "user",
     created_at: u.created_at,
     confirmed: !!u.email_confirmed_at,
+    trial_ends_at: profileMap[u.id]?.trial_ends_at ?? null,
     subscription: subMap[u.id] ?? null,
   }));
 

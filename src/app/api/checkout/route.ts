@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 const API = "https://api.abacatepay.com/v1";
-const PRODUCT_ID = "prod_Adzwd4TxkLkUzmRbqfyzc4nU";
+const BILLING_ID = "bill_KaUC2TeCLALmSKqTXmZgQUR6";
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 async function abacate(path: string, body?: object) {
   const res = await fetch(`${API}${path}`, {
@@ -17,12 +23,12 @@ async function abacate(path: string, body?: object) {
   return res.json();
 }
 
-async function ensureCustomer(email: string): Promise<string> {
+async function ensureCustomer(email: string, name?: string): Promise<string> {
   const list = await abacate("/customers/list");
   const found = list.data?.find((c: { email: string; id: string }) => c.email === email);
   if (found) return found.id;
 
-  const created = await abacate("/customers/create", { email });
+  const created = await abacate("/customers/create", { email, name });
   return created.data.id;
 }
 
@@ -43,26 +49,46 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("full_name")
+      .eq("id", user.id)
+      .single();
 
-    const customerId = await ensureCustomer(user.email!);
+    const customerId = await ensureCustomer(user.email!, profile?.full_name ?? undefined);
 
-    const checkout = await abacate("/subscriptions/create", {
-      items: [{ id: PRODUCT_ID, quantity: 1 }],
-      methods: ["CARD", "PIX"],
-      customerId,
-      externalId: `sub_${user.id}`,
-      returnUrl: `${appUrl}/C4Person`,
-      completionUrl: `${appUrl}/obrigado`,
-      metadata: { userId: user.id, email: user.email },
-    });
+    // Store customer_id → user_id mapping for webhook fallback lookup
+    const { data: existingSub } = await supabaseAdmin
+      .from("subscriptions")
+      .select("status")
+      .eq("user_id", user.id)
+      .single();
 
-    if (!checkout.data?.url) {
-      console.error("AbacatePay error:", checkout);
-      return NextResponse.json({ error: checkout.error || "Erro ao criar checkout" }, { status: 500 });
+    if (existingSub) {
+      await supabaseAdmin
+        .from("subscriptions")
+        .update({ abacatepay_customer_id: customerId, updated_at: new Date().toISOString() })
+        .eq("user_id", user.id);
+    } else {
+      await supabaseAdmin.from("subscriptions").insert({
+        user_id: user.id,
+        abacatepay_customer_id: customerId,
+        status: "pending",
+        plan: "pro",
+        updated_at: new Date().toISOString(),
+      });
     }
 
-    return NextResponse.json({ url: checkout.data.url });
+    // Fetch billing link URL
+    const billing = await abacate(`/billing/${BILLING_ID}`);
+    const url = billing.data?.url;
+
+    if (!url) {
+      console.error("AbacatePay billing link error:", billing);
+      return NextResponse.json({ error: billing.error || "Erro ao obter link de pagamento" }, { status: 500 });
+    }
+
+    return NextResponse.json({ url });
   } catch (err) {
     console.error("Checkout error:", err);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });

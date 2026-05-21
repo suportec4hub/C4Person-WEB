@@ -37,7 +37,17 @@ export async function POST(req: NextRequest) {
   }
 
   const { type, data } = event;
-  const userId = (data?.metadata as Record<string, string>)?.userId;
+  let userId = (data?.metadata as Record<string, string>)?.userId;
+
+  // Fallback: find user by AbacatePay customer ID
+  if (!userId && data?.customerId) {
+    const { data: sub } = await supabaseAdmin
+      .from("subscriptions")
+      .select("user_id")
+      .eq("abacatepay_customer_id", data.customerId as string)
+      .single();
+    userId = sub?.user_id;
+  }
 
   console.log(`[AbacatePay] Evento: ${type} | userId: ${userId}`);
 

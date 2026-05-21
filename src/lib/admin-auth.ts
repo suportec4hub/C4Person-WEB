@@ -33,6 +33,10 @@ export async function verifyAdmin(req?: NextRequest) {
     .eq("id", user.id)
     .single();
 
-  if (profile?.role !== "admin") return null;
+  if (profile?.role !== "ADMIN_C4HUB") return null;
   return user;
+}
+
+export function isElevatedRole(role: string | null | undefined): boolean {
+  return role === "ADMIN_C4HUB" || role === "ADM_PADRAO";
 }

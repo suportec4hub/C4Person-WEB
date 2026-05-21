@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, User, Mail, Lock, Shield, CheckCircle2 } from "lucide-react";
+import { Loader2, User, Mail, Lock, Shield, Crown, CheckCircle2 } from "lucide-react";
 
 export default function AdminCreatePage() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"ADMIN_C4HUB" | "ADM_PADRAO">("ADMIN_C4HUB");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -21,7 +22,7 @@ export default function AdminCreatePage() {
     const res = await fetch("/api/admin/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ full_name: fullName, email, password }),
+      body: JSON.stringify({ full_name: fullName, email, password, role }),
     });
 
     const data = await res.json();
@@ -47,14 +48,27 @@ export default function AdminCreatePage() {
       </div>
 
       <div className="bg-card border border-white/8 rounded-2xl p-7">
-        <div className="flex items-center gap-3 mb-7 pb-6 border-b border-white/5">
-          <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-            <Shield size={18} className="text-red-400" />
-          </div>
-          <div>
-            <p className="text-white font-semibold text-sm">Usuário Admin</p>
-            <p className="text-muted-foreground text-xs">Acesso total ao painel administrativo</p>
-          </div>
+        {/* Role selector */}
+        <div className="flex gap-3 mb-7 pb-6 border-b border-white/5">
+          {([
+            { value: "ADMIN_C4HUB", label: "Admin C4Hub", desc: "Acesso total + painel admin", icon: Shield, color: "border-red-500/40 bg-red-500/10 text-red-400" },
+            { value: "ADM_PADRAO",  label: "ADM Padrão",  desc: "Acesso total, sem painel admin", icon: Crown, color: "border-orange-500/40 bg-orange-500/10 text-orange-400" },
+          ] as const).map(({ value, label, desc, icon: Icon, color }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setRole(value)}
+              className={`flex-1 flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                role === value ? color : "border-white/10 hover:border-white/20"
+              }`}
+            >
+              <Icon size={18} className={role === value ? "" : "text-muted-foreground"} />
+              <div>
+                <p className={`font-semibold text-sm ${role === value ? "" : "text-muted-foreground"}`}>{label}</p>
+                <p className="text-muted-foreground text-xs">{desc}</p>
+              </div>
+            </button>
+          ))}
         </div>
 
         {success && (
@@ -122,7 +136,11 @@ export default function AdminCreatePage() {
             disabled={loading}
             className="w-full mt-2 bg-red-500 hover:bg-red-500/90 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm"
           >
-            {loading ? <><Loader2 size={16} className="animate-spin" /> Criando...</> : <><Shield size={16} /> Criar Admin</>}
+            {loading
+            ? <><Loader2 size={16} className="animate-spin" /> Criando...</>
+            : role === "ADMIN_C4HUB"
+              ? <><Shield size={16} /> Criar Admin C4Hub</>
+              : <><Crown size={16} /> Criar ADM Padrão</>}
           </button>
         </form>
       </div>
