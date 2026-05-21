@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-
+import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -74,60 +74,54 @@ export default function Dashboard() {
   const [newTransactionType, setNewTransactionType] = useState<"in" | "out">("out");
 
   const fetchTasks = async () => {
-    const res = await fetch('/api/tasks');
-    const data = await res.json();
-    if (Array.isArray(data)) setTasks(data);
+    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+    if (data) setTasks(data);
+    else if (error) console.error("Erro ao buscar tarefas", error);
   };
 
   const fetchHabits = async () => {
-    const res = await fetch('/api/habits');
-    const data = await res.json();
-    if (Array.isArray(data)) setHabits(data);
+    const { data, error } = await supabase.from('habits').select('*').order('created_at', { ascending: true });
+    if (data) setHabits(data);
+    else if (error) console.error("Erro ao buscar hábitos", error);
   };
 
   const fetchTransactions = async () => {
-    const res = await fetch('/api/transactions');
-    const data = await res.json();
-    if (Array.isArray(data)) setTransactions(data);
+    const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+    if (data) setTransactions(data);
+    else if (error) console.error("Erro ao buscar transações", error);
   };
 
   const toggleTask = async (id: string, currentStatus: boolean) => {
+    // Optimistic update
     setTasks(tasks.map(t => t.id === id ? { ...t, is_done: !currentStatus } : t));
-    await fetch(`/api/tasks/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_done: !currentStatus }),
-    });
+    await supabase.from('tasks').update({ is_done: !currentStatus }).eq('id', id);
   };
 
   const toggleHabit = async (id: string, currentStatus: boolean, currentStreak: number) => {
     const newStatus = !currentStatus;
     const newStreak = newStatus ? currentStreak + 1 : Math.max(0, currentStreak - 1);
     setHabits(habits.map(h => h.id === id ? { ...h, is_completed_today: newStatus, streak: newStreak } : h));
-    await fetch(`/api/habits/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_completed_today: newStatus, streak: newStreak }),
-    });
+    await supabase.from('habits').update({ is_completed_today: newStatus, streak: newStreak }).eq('id', id);
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
+    
     const newTask = { title: newTaskTitle, time: newTaskTime || "Livre", is_done: false, priority: newTaskPriority };
+    
+    // Optimistic update
     const tempId = Date.now().toString();
     setTasks([...tasks, { id: tempId, ...newTask }]);
     setShowTaskModal(false);
     setNewTaskTitle("");
     setNewTaskTime("");
     setNewTaskPriority('normal');
-    const res = await fetch('/api/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTask),
-    });
-    const data = await res.json();
-    if (data.id) setTasks(prev => prev.map(t => t.id === tempId ? data : t));
+
+    const { data, error } = await supabase.from('tasks').insert([newTask]).select();
+    if (data) {
+      setTasks(prev => prev.map(t => t.id === tempId ? data[0] : t));
+    }
   };
 
   const handleAddHabit = async (e: React.FormEvent) => {
@@ -138,13 +132,9 @@ export default function Dashboard() {
     setHabits([...habits, { id: tempId, ...newHabit }]);
     setShowHabitModal(false);
     setNewHabitName("");
-    const res = await fetch('/api/habits', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newHabit),
-    });
-    const data = await res.json();
-    if (data.id) setHabits(prev => prev.map(h => h.id === tempId ? data : h));
+
+    const { data } = await supabase.from('habits').insert([newHabit]).select();
+    if (data) setHabits(prev => prev.map(h => h.id === tempId ? data[0] : h));
   };
 
   const handleAddTransaction = async (e: React.FormEvent) => {
@@ -152,34 +142,31 @@ export default function Dashboard() {
     if (!newTransactionName.trim() || !newTransactionAmount) return;
     const amountNum = parseFloat(newTransactionAmount.replace(',', '.'));
     if (isNaN(amountNum)) return;
+
     const newTx = { name: newTransactionName, amount: amountNum, type: newTransactionType, transaction_date: new Date().toISOString() };
     const tempId = Date.now().toString();
-    setTransactions([{ id: tempId, ...newTx }, ...transactions]);
+    setTransactions([ { id: tempId, ...newTx }, ...transactions ]);
     setShowFinanceModal(false);
     setNewTransactionName("");
     setNewTransactionAmount("");
-    const res = await fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTx),
-    });
-    const data = await res.json();
-    if (data.id) setTransactions(prev => prev.map(t => t.id === tempId ? data : t));
+
+    const { data } = await supabase.from('transactions').insert([newTx]).select();
+    if (data) setTransactions(prev => prev.map(t => t.id === tempId ? data[0] : t));
   };
 
   const deleteTask = async (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
-    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+    await supabase.from('tasks').delete().eq('id', id);
   };
 
   const deleteHabit = async (id: string) => {
     setHabits(prev => prev.filter(h => h.id !== id));
-    await fetch(`/api/habits/${id}`, { method: 'DELETE' });
+    await supabase.from('habits').delete().eq('id', id);
   };
 
   const deleteTransaction = async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
-    await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+    await supabase.from('transactions').delete().eq('id', id);
   };
 
   useEffect(() => {
@@ -264,15 +251,12 @@ export default function Dashboard() {
       setResult(data);
       setSelectedActions(data.actionItems ?? []);
 
-      await fetch('/api/notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: `Reunião ${format(new Date(), "dd/MM")}`,
-          transcription: data.transcription,
-          summary: data.summary,
-        }),
-      });
+      // Salvar a nota na nuvem (Supabase)
+      await supabase.from('notes').insert([{
+        title: `Reunião ${format(new Date(), "dd/MM")}`,
+        transcription: data.transcription,
+        summary: data.summary
+      }]);
 
     } catch (error) {
       console.error(error);
@@ -284,18 +268,15 @@ export default function Dashboard() {
 
   const handleImportTasks = async () => {
     if (selectedActions.length === 0) return;
-    const created: any[] = [];
-    for (const title of selectedActions) {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, time: "Livre", is_done: false, priority: 'normal' }),
-      });
-      const task = await res.json();
-      if (task.id) created.push(task);
-    }
-    if (created.length > 0) {
-      setTasks(prev => [...prev, ...created]);
+    const newTasks = selectedActions.map(title => ({
+      title,
+      time: "Livre",
+      is_done: false,
+      priority: 'normal' as const,
+    }));
+    const { data } = await supabase.from('tasks').insert(newTasks).select();
+    if (data) {
+      setTasks(prev => [...prev, ...data]);
       setImportSuccess(true);
     }
   };
@@ -998,7 +979,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-white text-sm leading-none mb-0.5">C4 Assistant</h3>
-                    <p className="text-xs text-muted-foreground">Powered by Groq Llama</p>
+                    <p className="text-xs text-muted-foreground">Powered by GPT-4o-mini</p>
                   </div>
                 </div>
                 <button
