@@ -54,7 +54,7 @@ export default function LandingPage() {
             href="/login"
             className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-full font-semibold text-base shadow-[0_4px_30px_rgba(139,92,246,0.4)] transition-all hover:scale-105"
           >
-            Começar agora — é grátis <ArrowRight size={18} />
+            Começar agora <ArrowRight size={18} />
           </Link>
           <a
             href="#features"
@@ -212,12 +212,12 @@ export default function LandingPage() {
           <div className="bg-card border border-primary/30 rounded-3xl p-8 relative overflow-hidden shadow-[0_0_60px_rgba(139,92,246,0.15)]">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-purple-300 rounded-t-3xl" />
             <div className="inline-flex items-center gap-2 bg-primary/10 text-primary text-xs font-semibold px-3 py-1 rounded-full mb-6">
-              <Zap size={12} /> Em breve
+              <Zap size={12} /> Assinatura mensal
             </div>
             <h3 className="text-2xl font-bold text-white mb-1">C4 Person Pro</h3>
             <p className="text-muted-foreground text-sm mb-6">Acesso completo a todas as funcionalidades</p>
             <div className="flex items-end gap-2 mb-8">
-              <span className="text-5xl font-black text-white">R$?</span>
+              <span className="text-5xl font-black text-white">R$15,90</span>
               <span className="text-muted-foreground text-sm mb-2">/mês</span>
             </div>
             <div className="space-y-3 mb-8">
@@ -229,7 +229,7 @@ export default function LandingPage() {
               ))}
             </div>
             <CheckoutButton className="block w-full bg-primary hover:bg-primary/90 text-white py-3.5 rounded-xl font-semibold text-center transition-all shadow-[0_4px_20px_rgba(139,92,246,0.3)]">
-              Assinar agora — R$29,90/mês
+              Assinar agora — R$15,90/mês
             </CheckoutButton>
           </div>
         </div>

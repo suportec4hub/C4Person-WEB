@@ -3,8 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 const API = "https://api.abacatepay.com/v1";
-const PRODUCT_EXTERNAL_ID = "c4person-pro";
-const PLAN_PRICE = 2990; // R$29,90 — ajuste conforme necessário
+const PRODUCT_ID = "prod_Adzwd4TxkLkUzmRbqfyzc4nU";
 
 async function abacate(path: string, body?: object) {
   const res = await fetch(`${API}${path}`, {
@@ -16,21 +15,6 @@ async function abacate(path: string, body?: object) {
     ...(body && { body: JSON.stringify(body) }),
   });
   return res.json();
-}
-
-async function ensureProduct(): Promise<string> {
-  const list = await abacate("/products/list");
-  const found = list.data?.find((p: { externalId: string; id: string }) => p.externalId === PRODUCT_EXTERNAL_ID);
-  if (found) return found.id;
-
-  const created = await abacate("/products/create", {
-    externalId: PRODUCT_EXTERNAL_ID,
-    name: "C4 Person Pro",
-    price: PLAN_PRICE,
-    description: "Acesso completo ao C4 Person — Dashboard pessoal com IA",
-    cycle: "MONTHLY",
-  });
-  return created.data.id;
 }
 
 async function ensureCustomer(email: string): Promise<string> {
@@ -61,13 +45,10 @@ export async function POST(req: NextRequest) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-    const [productId, customerId] = await Promise.all([
-      ensureProduct(),
-      ensureCustomer(user.email!),
-    ]);
+    const customerId = await ensureCustomer(user.email!);
 
     const checkout = await abacate("/subscriptions/create", {
-      items: [{ id: productId, quantity: 1 }],
+      items: [{ id: PRODUCT_ID, quantity: 1 }],
       methods: ["CARD", "PIX"],
       customerId,
       externalId: `sub_${user.id}`,
