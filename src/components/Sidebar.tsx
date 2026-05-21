@@ -1,23 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, Target, Wallet, PenTool, Settings } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard, Target, Wallet, PenTool, LogOut } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 const NAV = [
-  { href: "/",        icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/goals",   icon: Target,          label: "Nexus · Metas" },
-  { href: "/finance", icon: Wallet,          label: "Nectar · Finanças" },
-  { href: "/notes",   icon: PenTool,         label: "Anotar · Notas" },
+  { href: "/C4Person",         icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/C4Person/goals",   icon: Target,          label: "Nexus · Metas" },
+  { href: "/C4Person/finance", icon: Wallet,          label: "Nectar · Finanças" },
+  { href: "/C4Person/notes",   icon: PenTool,         label: "Anotar · Notas" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   return (
     <aside className="w-20 glass border-r border-border flex flex-col items-center py-8 gap-8 relative z-10 flex-shrink-0">
       <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-xl shadow-[0_0_15px_rgba(139,92,246,0.5)]">
-        NL
+        C4
       </div>
 
       <nav className="flex flex-col gap-6 mt-8 text-muted-foreground">
@@ -37,16 +44,14 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="mt-auto flex flex-col gap-6 text-muted-foreground">
-        <button className="p-3 rounded-xl hover:bg-white/5 hover:text-white transition-all" title="Configurações">
-          <Settings size={22} />
+      <div className="mt-auto flex flex-col gap-4 text-muted-foreground">
+        <button
+          onClick={handleLogout}
+          title="Sair"
+          className="p-3 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-all"
+        >
+          <LogOut size={22} />
         </button>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="https://ui-avatars.com/api/?name=Lucas+Machado&background=27272a&color=fff"
-          alt="User"
-          className="w-10 h-10 rounded-full border border-border object-cover"
-        />
       </div>
     </aside>
   );
