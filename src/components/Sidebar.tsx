@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield } from "lucide-react";
+import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield, UserCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 const NAV = [
@@ -10,6 +10,7 @@ const NAV = [
   { href: "/C4Person/goals",   icon: Target,          label: "Nexus" },
   { href: "/C4Person/finance", icon: Wallet,          label: "Finanças" },
   { href: "/C4Person/notes",   icon: PenTool,         label: "Notas" },
+  { href: "/C4Person/profile", icon: UserCircle,      label: "Perfil" },
 ];
 
 interface SidebarProps {
