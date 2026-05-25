@@ -171,7 +171,7 @@ export default function GoalsPage() {
   const completedGoals = goals.filter((g) => getProgress(g.id) === 100);
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 relative">
+    <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 relative">
       {/* Background */}
       <div className="absolute top-0 left-[20%] w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-accent/5 rounded-full blur-[100px] -z-10 pointer-events-none" />
@@ -181,11 +181,11 @@ export default function GoalsPage() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="mb-10 flex justify-between items-end"
+        className="mb-6 md:mb-10 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end"
       >
         <div>
-          <h2 className="text-muted-foreground text-sm font-medium mb-1 uppercase tracking-wider">Nexus</h2>
-          <h1 className="text-4xl font-bold tracking-tight">Minhas Metas</h1>
+          <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Nexus</h2>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Minhas Metas</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {activeGoals.length} ativa{activeGoals.length !== 1 ? "s" : ""}
             {completedGoals.length > 0
@@ -197,9 +197,9 @@ export default function GoalsPage() {
           onClick={() => setShowModal(true)}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(139,92,246,0.3)] transition-all"
+          className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-4 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(139,92,246,0.3)] transition-all text-sm w-fit"
         >
-          <Plus size={18} />
+          <Plus size={17} />
           Nova Meta
         </motion.button>
       </motion.header>

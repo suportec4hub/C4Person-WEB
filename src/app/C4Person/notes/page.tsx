@@ -52,23 +52,23 @@ export default function NotesPage() {
   if (!mounted) return null;
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 relative">
+    <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 relative">
       <div className="absolute top-0 left-[20%] w-[500px] h-[500px] bg-primary/8 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
       {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-        className="mb-10 flex justify-between items-end"
+        className="mb-6 md:mb-10 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end"
       >
         <div>
-          <h2 className="text-muted-foreground text-sm font-medium mb-1 uppercase tracking-wider">Anotar</h2>
-          <h1 className="text-4xl font-bold tracking-tight">Notas & Reuniões</h1>
+          <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Anotar</h2>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Notas & Reuniões</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {notes.length} nota{notes.length !== 1 ? "s" : ""} gravada{notes.length !== 1 ? "s" : ""}
           </p>
         </div>
         {/* Search */}
-        <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 w-72">
+        <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 w-full sm:w-72">
           <Search size={16} className="text-muted-foreground flex-shrink-0" />
           <input
             type="text" value={search} onChange={e => setSearch(e.target.value)}

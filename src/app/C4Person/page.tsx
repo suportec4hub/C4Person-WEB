@@ -371,53 +371,53 @@ export default function Dashboard() {
   return (
     <>
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8 relative z-0">
+      <main className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 relative z-0">
         {/* Gradients */}
         <div className="absolute top-0 left-[20%] w-[500px] h-[500px] bg-primary/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
         <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-accent/5 rounded-full blur-[100px] -z-10 pointer-events-none" />
 
-        <header className="mb-10 flex justify-between items-end">
-          <motion.div 
+        <header className="mb-6 md:mb-10 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end">
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-muted-foreground text-sm font-medium mb-1 uppercase tracking-wider">
+            <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">
               {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
             </h2>
-            <h1 className="text-4xl font-bold tracking-tight">{getGreeting()}{firstName ? `, ${firstName}` : ""}</h1>
+            <h1 className="text-2xl md:text-4xl font-bold tracking-tight">{getGreeting()}{firstName ? `, ${firstName}` : ""}</h1>
           </motion.div>
-          
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2 sm:gap-3">
             <motion.button
               onClick={() => setShowChat(true)}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-4 py-2.5 rounded-full font-medium transition-all"
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-3 py-2 md:px-4 md:py-2.5 rounded-full font-medium transition-all text-sm"
             >
-              <Sparkles size={17} className="text-primary" />
-              <span>Assistente IA</span>
+              <Sparkles size={16} className="text-primary shrink-0" />
+              <span className="hidden xs:inline">Assistente IA</span>
             </motion.button>
 
             <motion.button
               onClick={() => setShowRecorder(true)}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-5 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(139,92,246,0.3)] transition-all"
+              className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-3 py-2 md:px-5 md:py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(139,92,246,0.3)] transition-all text-sm"
             >
-              <Mic size={18} />
-              <span>Gravar Reunião / Nota</span>
+              <Mic size={16} className="shrink-0" />
+              <span>Gravar Nota</span>
             </motion.button>
           </div>
         </header>
 
-        <div className="grid grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
           {/* Foco Principal */}
           <motion.section 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="col-span-8 glass-card p-6 flex flex-col relative overflow-hidden"
+            className="col-span-1 lg:col-span-8 glass-card p-4 md:p-6 flex flex-col relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none"><Target size={120} /></div>
             <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
@@ -488,7 +488,7 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="col-span-4 flex flex-col gap-6"
+            className="col-span-1 lg:col-span-4 flex flex-col gap-4 md:gap-6"
           >
             {/* Hábitos */}
             <div className="glass-card p-6">

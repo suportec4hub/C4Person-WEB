@@ -43,8 +43,32 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (profile?.role !== "ADMIN_C4HUB") redirect("/C4Person");
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
-      <aside className="w-60 border-r border-white/5 flex flex-col shrink-0">
+    <div className="min-h-screen bg-background text-foreground flex flex-col md:flex-row">
+      {/* ── Mobile top bar ── */}
+      <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-background/90 backdrop-blur-sm sticky top-0 z-50">
+        <div className="w-7 h-7 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0">
+          <Shield size={13} className="text-red-400" />
+        </div>
+        <p className="text-white font-bold text-sm flex-1">Admin C4HUB</p>
+        <div className="flex items-center gap-0.5">
+          {NAV.map(({ href, icon: Icon, label }) => (
+            <Link
+              key={href}
+              href={href}
+              title={label}
+              className="p-2 text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg transition-all"
+            >
+              <Icon size={16} />
+            </Link>
+          ))}
+          <Link href="/C4Person" title="Voltar ao App" className="p-2 text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg transition-all">
+            <ArrowLeft size={16} />
+          </Link>
+        </div>
+      </div>
+
+      {/* ── Desktop sidebar ── */}
+      <aside className="hidden md:flex w-60 border-r border-white/5 flex-col shrink-0">
         <div className="px-5 py-5 border-b border-white/5">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center">

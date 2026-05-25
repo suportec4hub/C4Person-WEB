@@ -149,24 +149,24 @@ export default function FinancePage() {
   const categories = newType === "in" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 relative">
+    <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 relative">
       <div className="absolute top-0 left-[20%] w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
       {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-        className="mb-10 flex justify-between items-end"
+        className="mb-6 md:mb-10 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end"
       >
         <div>
-          <h2 className="text-muted-foreground text-sm font-medium mb-1 uppercase tracking-wider">Nectar</h2>
-          <h1 className="text-4xl font-bold tracking-tight">Visão Financeira</h1>
+          <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Nectar</h2>
+          <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Visão Financeira</h1>
         </div>
         <motion.button
           onClick={() => setShowModal(true)}
           whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-500/90 text-white px-5 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition-all"
+          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-500/90 text-white px-4 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition-all text-sm w-fit"
         >
-          <Plus size={18} /> Nova Transação
+          <Plus size={17} /> Nova Transação
         </motion.button>
       </motion.header>
 
