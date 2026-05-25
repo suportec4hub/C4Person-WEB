@@ -62,6 +62,7 @@ export default function GoalsPage() {
   const [newTargetDate, setNewTargetDate] = useState("");
   const [newColor, setNewColor] = useState(COLORS[0]);
 
+  const [userId, setUserId] = useState("");
   const [milestoneInputs, setMilestoneInputs] = useState<Record<string, string>>({});
   const [taskInputs, setTaskInputs] = useState<Record<string, string>>({});
 
@@ -78,6 +79,7 @@ export default function GoalsPage() {
 
   useEffect(() => {
     setMounted(true);
+    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
     fetchAll();
   }, []);
 
@@ -98,6 +100,7 @@ export default function GoalsPage() {
       description: newDescription || null,
       target_date: newTargetDate || null,
       color: newColor,
+      user_id: userId,
     };
 
     setShowModal(false);
@@ -125,7 +128,7 @@ export default function GoalsPage() {
     const tempMs: Milestone = { id: tempId, goal_id: goalId, title, is_done: false, created_at: new Date().toISOString() };
     setMilestones((prev) => [...prev, tempMs]);
 
-    const { data } = await supabase.from("milestones").insert([{ goal_id: goalId, title, is_done: false }]).select();
+    const { data } = await supabase.from("milestones").insert([{ goal_id: goalId, title, is_done: false, user_id: userId }]).select();
     if (data) setMilestones((prev) => prev.map((m) => (m.id === tempId ? data[0] : m)));
   };
 
@@ -150,7 +153,7 @@ export default function GoalsPage() {
     setTasks((prev) => [...prev, tempTask]);
     const { data } = await supabase
       .from("tasks")
-      .insert([{ title, time: "Livre", is_done: false, priority: "normal", goal_id: goalId }])
+      .insert([{ title, time: "Livre", is_done: false, priority: "normal", goal_id: goalId, user_id: userId }])
       .select();
     if (data) setTasks((prev) => prev.map((t) => (t.id === tempId ? { ...data[0], goal_id: goalId } : t)));
   };

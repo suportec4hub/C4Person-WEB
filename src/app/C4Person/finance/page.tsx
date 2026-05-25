@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { format, subMonths } from "date-fns";
+import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
-  TrendingUp, TrendingDown, Search, Trash2, PiggyBank,
+  TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
@@ -21,11 +21,24 @@ interface Transaction {
   created_at: string;
 }
 
+interface Budget {
+  id: string;
+  category: string;
+  monthly_limit: number;
+}
+
 export default function FinancePage() {
   const [mounted, setMounted] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "in" | "out">("all");
+
+  const [userId, setUserId] = useState("");
+
+  const [budgets, setBudgets]                     = useState<Budget[]>([]);
+  const [showBudgetModal, setShowBudgetModal]     = useState(false);
+  const [budgetCategory, setBudgetCategory]       = useState("Alimentação");
+  const [budgetLimit, setBudgetLimit]             = useState("");
 
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState("");
@@ -35,13 +48,17 @@ export default function FinancePage() {
 
   useEffect(() => {
     setMounted(true);
+    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
     supabase
       .from("transactions")
       .select("*")
       .order("transaction_date", { ascending: false })
-      .then(({ data }) => {
-        if (data) setTransactions(data as Transaction[]);
-      });
+      .then(({ data }) => { if (data) setTransactions(data as Transaction[]); });
+    supabase
+      .from("budgets")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .then(({ data }) => { if (data) setBudgets(data as Budget[]); });
   }, []);
 
   /* ── derived totals ── */
@@ -118,6 +135,7 @@ export default function FinancePage() {
       type: newType,
       category: newCategory,
       transaction_date: new Date().toISOString(),
+      user_id: userId,
     };
 
     setShowModal(false);
@@ -127,10 +145,9 @@ export default function FinancePage() {
     if (data) {
       setTransactions(prev => [data[0] as Transaction, ...prev]);
     } else if (error?.message?.includes("category")) {
-      // Column doesn't exist yet — retry without category
       const { data: d2 } = await supabase
         .from("transactions")
-        .insert([{ name: payload.name, amount, type: newType, transaction_date: payload.transaction_date }])
+        .insert([{ name: payload.name, amount, type: newType, transaction_date: payload.transaction_date, user_id: userId }])
         .select();
       if (d2) setTransactions(prev => [d2[0] as Transaction, ...prev]);
     }
@@ -139,6 +156,51 @@ export default function FinancePage() {
   const deleteTx = async (id: string) => {
     setTransactions(prev => prev.filter(t => t.id !== id));
     await supabase.from("transactions").delete().eq("id", id);
+  };
+
+  /* ── budget spend this month ── */
+  const spentByCategory = useMemo(() => {
+    const now = new Date();
+    const start = startOfMonth(now).toISOString();
+    const end   = endOfMonth(now).toISOString();
+    return transactions
+      .filter(t => t.type === "out" && t.transaction_date >= start && t.transaction_date <= end)
+      .reduce<Record<string, number>>((acc, t) => {
+        const cat = t.category || "Outros";
+        acc[cat] = (acc[cat] || 0) + Number(t.amount);
+        return acc;
+      }, {});
+  }, [transactions]);
+
+  const addBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const limit = parseFloat(budgetLimit.replace(",", "."));
+    if (!budgetCategory || isNaN(limit) || limit <= 0) return;
+    setShowBudgetModal(false);
+
+    const existing = budgets.find(b => b.category === budgetCategory);
+    if (existing) {
+      const { data } = await supabase
+        .from("budgets")
+        .update({ monthly_limit: limit })
+        .eq("id", existing.id)
+        .select()
+        .single();
+      if (data) setBudgets(prev => prev.map(b => b.id === existing.id ? data as Budget : b));
+    } else {
+      const { data } = await supabase
+        .from("budgets")
+        .insert([{ category: budgetCategory, monthly_limit: limit, user_id: userId }])
+        .select()
+        .single();
+      if (data) setBudgets(prev => [...prev, data as Budget]);
+    }
+    setBudgetLimit("");
+  };
+
+  const deleteBudget = async (id: string) => {
+    setBudgets(prev => prev.filter(b => b.id !== id));
+    await supabase.from("budgets").delete().eq("id", id);
   };
 
   const fmt = (v: number) =>
@@ -311,6 +373,75 @@ export default function FinancePage() {
         </motion.div>
       </div>
 
+      {/* Budget section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}
+        className="glass-card p-6 mb-8"
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <Target size={18} className="text-primary" />
+            Orçamento Mensal
+          </h3>
+          <button
+            onClick={() => { setBudgetCategory("Alimentação"); setBudgetLimit(""); setShowBudgetModal(true); }}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            <Plus size={14} />
+            Adicionar
+          </button>
+        </div>
+
+        {budgets.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
+              <Target size={22} className="text-primary/50" />
+            </div>
+            <p className="text-sm text-muted-foreground">Nenhum orçamento definido.</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Defina limites mensais por categoria.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {budgets.map(b => {
+              const spent = spentByCategory[b.category] || 0;
+              const pct   = Math.min(100, b.monthly_limit > 0 ? (spent / b.monthly_limit) * 100 : 0);
+              const over  = spent > b.monthly_limit;
+              const color = over ? "#ef4444" : pct >= 80 ? "#f59e0b" : getCategoryColor(b.category);
+              return (
+                <div key={b.id} className="group relative p-4 rounded-2xl bg-white/3 border border-white/8 hover:border-white/15 transition-all">
+                  <button
+                    onClick={() => deleteBudget(b.id)}
+                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5"
+                  >
+                    <X size={13} />
+                  </button>
+                  <div className="flex items-center gap-2 mb-2 pr-5">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: getCategoryColor(b.category) }} />
+                    <span className="text-sm font-medium text-white truncate">{b.category}</span>
+                  </div>
+                  <div className="flex items-end justify-between mb-2">
+                    <span className="text-xl font-bold" style={{ color }}>{fmt(spent)}</span>
+                    <span className="text-xs text-muted-foreground">/ {fmt(b.monthly_limit)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${pct}%` }}
+                      transition={{ duration: 0.6, ease: "easeOut" }}
+                      className="h-full rounded-full"
+                      style={{ backgroundColor: color }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    {over ? `⚠ Estourou ${fmt(spent - b.monthly_limit)}` : `${fmt(b.monthly_limit - spent)} restante`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </motion.div>
+
       {/* Transaction list */}
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
@@ -400,7 +531,64 @@ export default function FinancePage() {
         )}
       </motion.div>
 
-      {/* Modal */}
+      {/* Budget modal */}
+      <AnimatePresence>
+        {showBudgetModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              className="bg-card border border-white/10 p-8 rounded-3xl w-full max-w-sm shadow-2xl relative"
+            >
+              <button onClick={() => setShowBudgetModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors">
+                <X size={22} />
+              </button>
+              <h2 className="text-xl font-bold mb-6 text-white flex items-center gap-2">
+                <Target size={20} className="text-primary" />
+                Orçamento Mensal
+              </h2>
+              <form onSubmit={addBudget} className="flex flex-col gap-5">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Categoria</label>
+                  <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                    {EXPENSE_CATEGORIES.map(c => (
+                      <button
+                        key={c.label} type="button" onClick={() => setBudgetCategory(c.label)}
+                        className={`py-2 px-1 rounded-xl text-xs font-medium border text-center transition-colors ${
+                          budgetCategory === c.label ? "" : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
+                        }`}
+                        style={budgetCategory === c.label ? { backgroundColor: `${c.color}20`, borderColor: `${c.color}50`, color: c.color } : {}}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Limite Mensal (R$)</label>
+                  <input
+                    type="number" step="0.01" autoFocus value={budgetLimit}
+                    onChange={e => setBudgetLimit(e.target.value)}
+                    placeholder="0,00"
+                    className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={!budgetCategory || !budgetLimit}
+                  className="mt-1 w-full py-3 rounded-xl font-medium bg-primary hover:bg-primary/90 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Salvar
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Transaction modal */}
       <AnimatePresence>
         {showModal && (
           <motion.div

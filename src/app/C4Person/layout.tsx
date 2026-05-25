@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/Sidebar";
 import { TrialBanner } from "@/components/TrialBanner";
+import { PomodoroTimer } from "@/components/PomodoroTimer";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
@@ -70,6 +71,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         {showTrialBanner && trialEnd && <TrialBanner trialEnd={trialEnd} />}
         {children}
       </div>
+      <PomodoroTimer />
     </div>
   );
 }

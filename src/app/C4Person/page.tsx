@@ -62,6 +62,8 @@ export default function Dashboard() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const [userId, setUserId] = useState("");
+
   // Estados de Tarefas
   const [tasks, setTasks] = useState<any[]>([]);
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -116,7 +118,7 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     
-    const newTask = { title: newTaskTitle, time: newTaskTime || "Livre", is_done: false, priority: newTaskPriority };
+    const newTask = { title: newTaskTitle, time: newTaskTime || "Livre", is_done: false, priority: newTaskPriority, user_id: userId };
     
     // Optimistic update
     const tempId = Date.now().toString();
@@ -135,7 +137,7 @@ export default function Dashboard() {
   const handleAddHabit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHabitName.trim()) return;
-    const newHabit = { name: newHabitName, streak: 0, is_completed_today: false };
+    const newHabit = { name: newHabitName, streak: 0, is_completed_today: false, user_id: userId };
     const tempId = Date.now().toString();
     setHabits([...habits, { id: tempId, ...newHabit }]);
     setShowHabitModal(false);
@@ -151,7 +153,7 @@ export default function Dashboard() {
     const amountNum = parseFloat(newTransactionAmount.replace(',', '.'));
     if (isNaN(amountNum)) return;
 
-    const newTx = { name: newTransactionName, amount: amountNum, type: newTransactionType, transaction_date: new Date().toISOString() };
+    const newTx = { name: newTransactionName, amount: amountNum, type: newTransactionType, transaction_date: new Date().toISOString(), user_id: userId };
     const tempId = Date.now().toString();
     setTransactions([ { id: tempId, ...newTx }, ...transactions ]);
     setShowFinanceModal(false);
@@ -184,6 +186,7 @@ export default function Dashboard() {
     fetchTransactions();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
+      setUserId(user.id);
       supabase.from("profiles").select("full_name").eq("id", user.id).single()
         .then(({ data }) => {
           const raw =
@@ -278,7 +281,8 @@ export default function Dashboard() {
       await supabase.from('notes').insert([{
         title: `Reunião ${format(new Date(), "dd/MM")}`,
         transcription: data.transcription,
-        summary: data.summary
+        summary: data.summary,
+        user_id: userId,
       }]);
 
     } catch (error) {
@@ -296,6 +300,7 @@ export default function Dashboard() {
       time: "Livre",
       is_done: false,
       priority: 'normal' as const,
+      user_id: userId,
     }));
     const { data } = await supabase.from('tasks').insert(newTasks).select();
     if (data) {
