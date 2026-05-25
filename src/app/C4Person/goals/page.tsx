@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { SkeletonPage } from "@/components/Skeleton";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -52,6 +53,7 @@ interface Task {
 
 export default function GoalsPage() {
   const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -66,7 +68,7 @@ export default function GoalsPage() {
   const [milestoneInputs, setMilestoneInputs] = useState<Record<string, string>>({});
   const [taskInputs, setTaskInputs] = useState<Record<string, string>>({});
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     const [{ data: goalsData }, { data: msData }, { data: tasksData }] = await Promise.all([
       supabase.from("goals").select("*").order("created_at", { ascending: false }),
       supabase.from("milestones").select("*").order("created_at", { ascending: true }),
@@ -75,13 +77,19 @@ export default function GoalsPage() {
     if (goalsData) setGoals(goalsData);
     if (msData) setMilestones(msData);
     if (tasksData) setTasks(tasksData as Task[]);
-  };
+  }, []);
 
   useEffect(() => {
     setMounted(true);
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
-    fetchAll();
-  }, []);
+    fetchAll().finally(() => setLoading(false));
+
+    const channel = supabase.channel("goals-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "goals" }, fetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchAll]);
 
   const getMilestones = (goalId: string) => milestones.filter((m) => m.goal_id === goalId);
 
@@ -169,6 +177,7 @@ export default function GoalsPage() {
   };
 
   if (!mounted) return null;
+  if (loading) return <SkeletonPage />;
 
   const activeGoals = goals.filter((g) => getProgress(g.id) < 100);
   const completedGoals = goals.filter((g) => getProgress(g.id) === 100);

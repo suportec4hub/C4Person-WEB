@@ -22,6 +22,60 @@
   --foreground: #fafafa;
 }
 
+/* ── Light theme overrides ── */
+html.light {
+  --color-background: #f1f5f9;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-secondary: #e2e8f0;
+  --color-secondary-foreground: #0f172a;
+  --color-muted: #e2e8f0;
+  --color-muted-foreground: #64748b;
+  --color-border: #e2e8f0;
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+}
+
+html.light body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+html.light .glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+html.light .glass-card {
+  background: linear-gradient(145deg, rgba(255,255,255,0.95) 0%, rgba(241,245,249,0.95) 100%);
+  border: 1px solid rgba(0,0,0,0.07);
+  box-shadow: 0 4px 24px 0 rgba(0,0,0,0.06);
+}
+
+html.light .text-white        { color: #0f172a !important; }
+html.light .text-white\/90    { color: rgba(15,23,42,0.9) !important; }
+html.light .text-white\/80    { color: rgba(15,23,42,0.8) !important; }
+html.light .text-white\/70    { color: rgba(15,23,42,0.7) !important; }
+html.light .text-white\/60    { color: rgba(15,23,42,0.6) !important; }
+
+html.light .bg-white\/3       { background-color: rgba(0,0,0,0.02) !important; }
+html.light .bg-white\/5       { background-color: rgba(0,0,0,0.03) !important; }
+html.light .bg-white\/10      { background-color: rgba(0,0,0,0.05) !important; }
+html.light .bg-white\/15      { background-color: rgba(0,0,0,0.07) !important; }
+html.light .bg-background\/40 { background-color: rgba(241,245,249,0.7) !important; }
+html.light .bg-background\/50 { background-color: rgba(241,245,249,0.8) !important; }
+html.light .bg-background\/60 { background-color: rgba(241,245,249,0.85) !important; }
+
+html.light .border-white\/5   { border-color: rgba(0,0,0,0.05) !important; }
+html.light .border-white\/8   { border-color: rgba(0,0,0,0.07) !important; }
+html.light .border-white\/10  { border-color: rgba(0,0,0,0.09) !important; }
+html.light .border-white\/15  { border-color: rgba(0,0,0,0.11) !important; }
+html.light .border-white\/20  { border-color: rgba(0,0,0,0.14) !important; }
+html.light .border-border     { border-color: #e2e8f0 !important; }
+
 body {
   background-color: var(--background);
   color: var(--foreground);
@@ -45,17 +99,14 @@ body {
   border-radius: 1rem;
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+/* Skeleton pulse */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
-}
+.skeleton { animation: skeleton-pulse 1.5s ease-in-out infinite; }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { SkeletonPage } from "@/components/Skeleton";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -63,6 +64,7 @@ export default function Dashboard() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const [userId, setUserId] = useState("");
+  const [loading, setLoading] = useState(true);
 
   // Estados de Tarefas
   const [tasks, setTasks] = useState<any[]>([]);
@@ -83,23 +85,35 @@ export default function Dashboard() {
   const [newTransactionAmount, setNewTransactionAmount] = useState("");
   const [newTransactionType, setNewTransactionType] = useState<"in" | "out">("out");
 
-  const fetchTasks = async () => {
-    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
+  const fetchTasks = useCallback(async () => {
+    const { data } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
     if (data) setTasks(data);
-    else if (error) console.error("Erro ao buscar tarefas", error);
-  };
+  }, []);
 
-  const fetchHabits = async () => {
-    const { data, error } = await supabase.from('habits').select('*').order('created_at', { ascending: true });
-    if (data) setHabits(data);
-    else if (error) console.error("Erro ao buscar hábitos", error);
-  };
+  const fetchHabits = useCallback(async () => {
+    const { data } = await supabase.from('habits').select('*').order('created_at', { ascending: true });
+    if (data) {
+      // Reset diário: se last_completed_date < hoje, limpa is_completed_today
+      const today = new Date().toISOString().slice(0, 10);
+      const toReset = data.filter((h: any) => h.is_completed_today && h.last_completed_date !== today);
+      if (toReset.length > 0) {
+        await Promise.all(
+          toReset.map((h: any) =>
+            supabase.from('habits').update({ is_completed_today: false }).eq('id', h.id)
+          )
+        );
+        const { data: refreshed } = await supabase.from('habits').select('*').order('created_at', { ascending: true });
+        if (refreshed) setHabits(refreshed);
+      } else {
+        setHabits(data);
+      }
+    }
+  }, []);
 
-  const fetchTransactions = async () => {
-    const { data, error } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
+  const fetchTransactions = useCallback(async () => {
+    const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
     if (data) setTransactions(data);
-    else if (error) console.error("Erro ao buscar transações", error);
-  };
+  }, []);
 
   const toggleTask = async (id: string, currentStatus: boolean) => {
     // Optimistic update
@@ -110,8 +124,13 @@ export default function Dashboard() {
   const toggleHabit = async (id: string, currentStatus: boolean, currentStreak: number) => {
     const newStatus = !currentStatus;
     const newStreak = newStatus ? currentStreak + 1 : Math.max(0, currentStreak - 1);
+    const today = new Date().toISOString().slice(0, 10);
     setHabits(habits.map(h => h.id === id ? { ...h, is_completed_today: newStatus, streak: newStreak } : h));
-    await supabase.from('habits').update({ is_completed_today: newStatus, streak: newStreak }).eq('id', id);
+    await supabase.from('habits').update({
+      is_completed_today: newStatus,
+      streak: newStreak,
+      last_completed_date: newStatus ? today : null,
+    }).eq('id', id);
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
@@ -181,9 +200,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     setMounted(true);
-    fetchTasks();
-    fetchHabits();
-    fetchTransactions();
+
+    Promise.all([fetchTasks(), fetchHabits(), fetchTransactions()]).finally(() => setLoading(false));
+
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       setUserId(user.id);
@@ -200,7 +219,27 @@ export default function Dashboard() {
           setFirstName(display);
         });
     });
-  }, []);
+
+    // Realtime subscriptions
+    const channel = supabase.channel("dashboard-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, fetchTasks)
+      .on("postgres_changes", { event: "*", schema: "public", table: "habits" }, fetchHabits)
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, fetchTransactions)
+      .subscribe();
+
+    // Keyboard shortcuts
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "n" || e.key === "N") setShowTaskModal(true);
+      if (e.key === "h" || e.key === "H") setShowHabitModal(true);
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [fetchTasks, fetchHabits, fetchTransactions]);
 
   // Timer para o gravador
   useEffect(() => {
@@ -372,6 +411,7 @@ export default function Dashboard() {
   const upcomingEvents = tasks.filter(t => t.time && t.time !== "Livre" && !t.is_done).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
   if (!mounted) return null;
+  if (loading) return <SkeletonPage />;
 
   return (
     <>

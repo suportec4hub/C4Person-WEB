@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { SkeletonList } from "@/components/Skeleton";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -17,19 +18,26 @@ interface Note {
 
 export default function NotesPage() {
   const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<Note[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Note | null>(null);
   const [expandedTranscription, setExpandedTranscription] = useState(false);
 
+  const fetchNotes = useCallback(async () => {
+    const { data } = await supabase.from("notes").select("*").order("created_at", { ascending: false });
+    if (data) setNotes(data as Note[]);
+  }, []);
+
   useEffect(() => {
     setMounted(true);
-    supabase
-      .from("notes")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => { if (data) setNotes(data as Note[]); });
-  }, []);
+    fetchNotes().finally(() => setLoading(false));
+
+    const channel = supabase.channel("notes-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "notes" }, fetchNotes)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchNotes]);
 
   const filtered = useMemo(() =>
     notes.filter(n =>
@@ -50,6 +58,11 @@ export default function NotesPage() {
   };
 
   if (!mounted) return null;
+  if (loading) return (
+    <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8">
+      <SkeletonList rows={6} />
+    </div>
+  );
 
   return (
     <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 relative">

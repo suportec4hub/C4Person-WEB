@@ -2,15 +2,18 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield, UserCircle } from "lucide-react";
+import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield, UserCircle, CalendarDays, BarChart3 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV = [
-  { href: "/C4Person",         icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/C4Person/goals",   icon: Target,          label: "Nexus" },
-  { href: "/C4Person/finance", icon: Wallet,          label: "Finanças" },
-  { href: "/C4Person/notes",   icon: PenTool,         label: "Notas" },
-  { href: "/C4Person/profile", icon: UserCircle,      label: "Perfil" },
+  { href: "/C4Person",          icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/C4Person/goals",    icon: Target,          label: "Nexus" },
+  { href: "/C4Person/finance",  icon: Wallet,          label: "Finanças" },
+  { href: "/C4Person/notes",    icon: PenTool,         label: "Notas" },
+  { href: "/C4Person/calendar", icon: CalendarDays,    label: "Calendário" },
+  { href: "/C4Person/reports",  icon: BarChart3,       label: "Relatório" },
+  { href: "/C4Person/profile",  icon: UserCircle,      label: "Perfil" },
 ];
 
 interface SidebarProps {
@@ -52,6 +55,7 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
         </nav>
 
         <div className="mt-auto flex flex-col gap-4 text-muted-foreground">
+          <ThemeToggle />
           {isAdmin && (
             <Link
               href="/admin"
@@ -82,30 +86,30 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all min-w-[52px] ${
+              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all min-w-[44px] ${
                 active ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <Icon size={20} />
-              <span className="text-[9px] font-medium">{label}</span>
+              <Icon size={18} />
+              <span className="text-[8px] font-medium">{label}</span>
             </Link>
           );
         })}
         {isAdmin && (
           <Link
             href="/admin"
-            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[52px]"
+            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[44px]"
           >
-            <Shield size={20} />
-            <span className="text-[9px] font-medium">Admin</span>
+            <Shield size={18} />
+            <span className="text-[8px] font-medium">Admin</span>
           </Link>
         )}
         <button
           onClick={handleLogout}
-          className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[52px]"
+          className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[44px]"
         >
-          <LogOut size={20} />
-          <span className="text-[9px] font-medium">Sair</span>
+          <LogOut size={18} />
+          <span className="text-[8px] font-medium">Sair</span>
         </button>
       </nav>
     </>

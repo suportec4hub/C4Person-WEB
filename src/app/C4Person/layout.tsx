@@ -1,6 +1,4 @@
-import { Sidebar } from "@/components/Sidebar";
-import { TrialBanner } from "@/components/TrialBanner";
-import { PomodoroTimer } from "@/components/PomodoroTimer";
+import { DashboardShell } from "@/app/C4Person/DashboardShell";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
@@ -39,7 +37,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const isElevated = profile?.role === "ADMIN_C4HUB" || profile?.role === "ADM_PADRAO";
 
   let showTrialBanner = false;
-  let trialEnd: Date | null = null;
+  let trialEnd: string | null = null;
 
   if (!isElevated) {
     const { data: sub } = await supabaseAdmin
@@ -49,29 +47,30 @@ export default async function DashboardLayout({ children }: { children: React.Re
       .single();
 
     if (sub?.status !== "active") {
+      let trialEndDate: Date;
       if (profile?.trial_ends_at) {
-        trialEnd = new Date(profile.trial_ends_at);
+        trialEndDate = new Date(profile.trial_ends_at);
       } else {
         const base = profile?.created_at ?? user.created_at;
-        trialEnd = new Date(new Date(base).getTime() + 15 * 24 * 60 * 60 * 1000);
+        trialEndDate = new Date(new Date(base).getTime() + 15 * 24 * 60 * 60 * 1000);
       }
 
-      if (new Date() > trialEnd) {
+      if (new Date() > trialEndDate) {
         redirect("/assinar?expired=true");
       }
 
       showTrialBanner = true;
+      trialEnd = trialEndDate.toISOString();
     }
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar isAdmin={isFullAdmin} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {showTrialBanner && trialEnd && <TrialBanner trialEnd={trialEnd} />}
-        {children}
-      </div>
-      <PomodoroTimer />
-    </div>
+    <DashboardShell
+      isAdmin={isFullAdmin}
+      showTrialBanner={showTrialBanner}
+      trialEnd={trialEnd}
+    >
+      {children}
+    </DashboardShell>
   );
 }

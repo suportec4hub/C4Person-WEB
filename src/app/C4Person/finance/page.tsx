@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { SkeletonPage } from "@/components/Skeleton";
 import { supabase } from "@/lib/supabase";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
-  TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target,
+  TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target, Download,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
@@ -29,6 +30,7 @@ interface Budget {
 
 export default function FinancePage() {
   const [mounted, setMounted] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "in" | "out">("all");
@@ -46,20 +48,45 @@ export default function FinancePage() {
   const [newType, setNewType] = useState<"in" | "out">("out");
   const [newCategory, setNewCategory] = useState("Outros");
 
+  const fetchData = useCallback(async () => {
+    const [txRes, budRes] = await Promise.all([
+      supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
+      supabase.from("budgets").select("*").order("created_at", { ascending: true }),
+    ]);
+    if (txRes.data)  setTransactions(txRes.data as Transaction[]);
+    if (budRes.data) setBudgets(budRes.data as Budget[]);
+  }, []);
+
+  const exportCSV = () => {
+    const header = "Data,Descrição,Tipo,Categoria,Valor";
+    const rows = transactions.map(t =>
+      `${t.transaction_date ? format(new Date(t.transaction_date), "dd/MM/yyyy") : ""},` +
+      `"${t.name.replace(/"/g, '""')}",` +
+      `${t.type === "in" ? "Receita" : "Despesa"},` +
+      `${t.category || "Outros"},` +
+      `${Number(t.amount).toFixed(2)}`
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `financas_${format(new Date(), "yyyy-MM")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     setMounted(true);
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
-    supabase
-      .from("transactions")
-      .select("*")
-      .order("transaction_date", { ascending: false })
-      .then(({ data }) => { if (data) setTransactions(data as Transaction[]); });
-    supabase
-      .from("budgets")
-      .select("*")
-      .order("created_at", { ascending: true })
-      .then(({ data }) => { if (data) setBudgets(data as Budget[]); });
-  }, []);
+    fetchData().finally(() => setLoading(false));
+
+    const channel = supabase.channel("finance-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, fetchData)
+      .on("postgres_changes", { event: "*", schema: "public", table: "budgets" }, fetchData)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchData]);
 
   /* ── derived totals ── */
   const totalIn  = useMemo(() => transactions.filter(t => t.type === "in").reduce((s, t) => s + Number(t.amount), 0), [transactions]);
@@ -207,6 +234,7 @@ export default function FinancePage() {
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
   if (!mounted) return null;
+  if (loading) return <SkeletonPage />;
 
   const categories = newType === "in" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
 
@@ -223,13 +251,22 @@ export default function FinancePage() {
           <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Nectar</h2>
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Visão Financeira</h1>
         </div>
-        <motion.button
-          onClick={() => setShowModal(true)}
-          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-500/90 text-white px-4 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition-all text-sm w-fit"
-        >
-          <Plus size={17} /> Nova Transação
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
+            title="Exportar CSV"
+          >
+            <Download size={16} /> CSV
+          </button>
+          <motion.button
+            onClick={() => setShowModal(true)}
+            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+            className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-500/90 text-white px-4 py-2.5 rounded-full font-medium shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition-all text-sm"
+          >
+            <Plus size={17} /> Nova Transação
+          </motion.button>
+        </div>
       </motion.header>
 
       {/* Summary cards */}
