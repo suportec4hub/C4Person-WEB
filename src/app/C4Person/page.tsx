@@ -326,7 +326,8 @@ export default function Dashboard() {
 
     } catch (error) {
       console.error(error);
-      alert("Erro ao processar o áudio. Verifique sua chave da API.");
+      const msg = error instanceof Error ? error.message : "Erro desconhecido.";
+      alert(`Erro ao processar o áudio:\n\n${msg}`);
     } finally {
       setIsProcessing(false);
     }

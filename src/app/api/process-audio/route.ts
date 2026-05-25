@@ -8,6 +8,13 @@ const groq = new OpenAI({
 });
 
 export async function POST(req: NextRequest) {
+  if (!process.env.GROQ_API_KEY) {
+    return NextResponse.json(
+      { error: "GROQ_API_KEY não configurada. Adicione a variável de ambiente no Vercel." },
+      { status: 500 }
+    );
+  }
+
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
