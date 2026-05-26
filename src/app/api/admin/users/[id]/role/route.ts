@@ -14,8 +14,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Role inválida" }, { status: 400 });
   }
 
-  const { error } = await supabaseAdmin.from("profiles").update({ role }).eq("id", id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Tenta atualizar; se não houver linha (profile não existe), cria com upsert
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from("profiles")
+    .update({ role })
+    .eq("id", id)
+    .select("id");
+
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+
+  if (!updated || updated.length === 0) {
+    // Perfil ainda não existe — cria agora
+    const { error: insertError } = await supabaseAdmin
+      .from("profiles")
+      .insert({ id, role });
+    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

@@ -75,8 +75,15 @@ export default function AdminUsersPage() {
         setRoleError(data.error ?? `Erro ${res.status}`);
         return; // NÃO atualiza estado local — mantém valor real
       }
-      // Só atualiza o estado local quando o banco confirmou
-      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
+      // Confirma lendo o valor real do banco (garante que foi salvo de verdade)
+      const verify = await fetch("/api/admin/users");
+      if (verify.ok) {
+        const fresh = await verify.json();
+        setUsers(fresh.users);
+      } else {
+        // Fallback: atualiza local pelo que foi enviado
+        setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
+      }
       setRoleSaved(userId);
       setTimeout(() => setRoleSaved(null), 2000);
     } catch (e) {
