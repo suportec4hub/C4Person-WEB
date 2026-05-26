@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Search, CheckCircle2, XCircle, Shield, User, ToggleLeft, ToggleRight, Crown } from "lucide-react";
+import { Loader2, Search, CheckCircle2, XCircle, Shield, User, ToggleLeft, ToggleRight, Crown, AlertCircle } from "lucide-react";
 
 interface UserRow {
   id: string;
@@ -57,15 +57,33 @@ export default function AdminUsersPage() {
     setToggling(null);
   };
 
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [roleSaved, setRoleSaved] = useState<string | null>(null); // userId do último salvo
+
   const changeRole = async (userId: string, newRole: string) => {
     setChangingRole(userId);
-    await fetch(`/api/admin/users/${userId}/role`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: newRole }),
-    });
-    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
-    setChangingRole(null);
+    setRoleError(null);
+    setRoleSaved(null);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/role`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: newRole }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRoleError(data.error ?? `Erro ${res.status}`);
+        return; // NÃO atualiza estado local — mantém valor real
+      }
+      // Só atualiza o estado local quando o banco confirmou
+      setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
+      setRoleSaved(userId);
+      setTimeout(() => setRoleSaved(null), 2000);
+    } catch (e) {
+      setRoleError("Erro de rede ao salvar role.");
+    } finally {
+      setChangingRole(null);
+    }
   };
 
   const getTrialLabel = (u: UserRow) => {
@@ -104,6 +122,14 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
+      {roleError && (
+        <div className="mb-4 flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl">
+          <AlertCircle size={16} />
+          <span>Erro ao salvar role: <strong>{roleError}</strong></span>
+          <button onClick={() => setRoleError(null)} className="ml-auto text-red-400/60 hover:text-red-400">✕</button>
+        </div>
+      )}
+
       <div className="bg-card border border-white/8 rounded-2xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -121,6 +147,7 @@ export default function AdminUsersPage() {
               const isActive = u.subscription?.status === "active";
               const isTogglingThis = toggling === u.id;
               const isChangingRoleThis = changingRole === u.id;
+              const justSaved = roleSaved === u.id;
               const roleInfo = ROLE_LABELS[u.role] ?? ROLE_LABELS.user;
               const trialLabel = getTrialLabel(u);
 
@@ -146,15 +173,20 @@ export default function AdminUsersPage() {
                       {isChangingRoleThis
                         ? <Loader2 size={12} className="animate-spin text-muted-foreground" />
                         : (
-                          <select
-                            value={u.role === "admin" ? "ADMIN_C4HUB" : u.role}
-                            onChange={(e) => changeRole(u.id, e.target.value)}
-                            className="bg-background border border-white/10 text-muted-foreground text-xs rounded-lg px-1.5 py-0.5 focus:outline-none focus:border-primary/50 cursor-pointer"
-                          >
-                            <option value="user">Usuário</option>
-                            <option value="ADM_PADRAO">ADM Padrão</option>
-                            <option value="ADMIN_C4HUB">Admin C4Hub</option>
-                          </select>
+                          <>
+                            <select
+                              value={u.role === "admin" ? "ADMIN_C4HUB" : u.role}
+                              onChange={(e) => changeRole(u.id, e.target.value)}
+                              className="bg-background border border-white/10 text-muted-foreground text-xs rounded-lg px-1.5 py-0.5 focus:outline-none focus:border-primary/50 cursor-pointer"
+                            >
+                              <option value="user">Usuário</option>
+                              <option value="ADM_PADRAO">ADM Padrão</option>
+                              <option value="ADMIN_C4HUB">Admin C4Hub</option>
+                            </select>
+                            {justSaved && (
+                              <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" title="Salvo!" />
+                            )}
+                          </>
                         )}
                     </div>
                   </td>
