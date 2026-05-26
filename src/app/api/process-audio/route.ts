@@ -1,11 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
-// Groq é compatível com a API da OpenAI — mesma SDK, outra baseURL
+export const maxDuration = 60;
+
 const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY || "dummy_key",
+  apiKey: process.env.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1",
 });
+
+async function generateSummary(transcript: string) {
+  const completion = await groq.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Você é um assistente pessoal produtivo. Analise a transcrição e retorne um JSON com exatamente duas chaves:
+- "summary": resumo conciso em Markdown com títulos (## Resumo, ## Pontos Principais) e listas
+- "actionItems": array de strings com as tarefas/ações identificadas (máximo 10 itens, frases curtas e diretas no infinitivo)
+
+Se não houver tarefas identificadas, retorne "actionItems" como array vazio.
+
+Responda SEMPRE em Português do Brasil.`,
+      },
+      { role: "user", content: transcript },
+    ],
+  });
+
+  try {
+    const parsed = JSON.parse(completion.choices[0].message.content || "{}");
+    return {
+      summary: parsed.summary || "",
+      actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+    };
+  } catch {
+    return { summary: completion.choices[0].message.content || "", actionItems: [] };
+  }
+}
 
 export async function POST(req: NextRequest) {
   if (!process.env.GROQ_API_KEY) {
@@ -17,60 +48,46 @@ export async function POST(req: NextRequest) {
 
   try {
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    const mode = (formData.get("mode") as string) || "full";
 
+    // ── Modo: apenas gerar resumo a partir de transcrição já pronta ──
+    if (mode === "summarize") {
+      const transcript = formData.get("transcript") as string;
+      if (!transcript?.trim()) {
+        return NextResponse.json({ error: "Transcrição não fornecida." }, { status: 400 });
+      }
+      const { summary, actionItems } = await generateSummary(transcript);
+      return NextResponse.json({ summary, actionItems });
+    }
+
+    // ── Modo: transcrever áudio (+ opcionalmente gerar resumo) ──
+    const file = formData.get("file") as File | null;
     if (!file) {
       return NextResponse.json({ error: "Nenhum arquivo de áudio enviado." }, { status: 400 });
     }
 
-    // 1. Transcrição via Groq Whisper
+    if (file.size > 24 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: "Segmento de áudio excede 24 MB. Reduza a duração do segmento." },
+        { status: 400 }
+      );
+    }
+
     const transcription = await groq.audio.transcriptions.create({
-      file: file,
+      file,
       model: "whisper-large-v3-turbo",
       language: "pt",
     });
 
     const transcriptText = transcription.text;
 
-    // 2. Resumo + extração de tarefas via Groq (Llama)
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: `Você é um assistente pessoal produtivo. Analise a transcrição e retorne um JSON com exatamente duas chaves:
-- "summary": resumo conciso em Markdown com títulos (## Resumo, ## Pontos Principais) e listas
-- "actionItems": array de strings com as tarefas/ações identificadas (máximo 10 itens, frases curtas e diretas no infinitivo)
-
-Se não houver tarefas identificadas, retorne "actionItems" como array vazio.
-
-Exemplo de resposta válida:
-{
-  "summary": "## Resumo\\nReunião sobre lançamento do produto...\\n\\n## Pontos Principais\\n- Prazo definido para 15/03",
-  "actionItems": ["Enviar proposta para o cliente", "Marcar reunião de follow-up com o time"]
-}
-
-Responda SEMPRE em Português do Brasil.`,
-        },
-        {
-          role: "user",
-          content: transcriptText,
-        },
-      ],
-    });
-
-    let summary = "";
-    let actionItems: string[] = [];
-
-    try {
-      const parsed = JSON.parse(completion.choices[0].message.content || "{}");
-      summary = parsed.summary || "";
-      actionItems = Array.isArray(parsed.actionItems) ? parsed.actionItems : [];
-    } catch {
-      summary = completion.choices[0].message.content || "";
+    // mode=transcribe → devolve só o texto (para processamento em chunks)
+    if (mode === "transcribe") {
+      return NextResponse.json({ transcription: transcriptText });
     }
 
+    // mode=full (padrão) → transcreve + gera resumo numa chamada só
+    const { summary, actionItems } = await generateSummary(transcriptText);
     return NextResponse.json({ transcription: transcriptText, summary, actionItems });
 
   } catch (error: unknown) {

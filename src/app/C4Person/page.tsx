@@ -47,13 +47,15 @@ export default function Dashboard() {
   const [showRecorder, setShowRecorder] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, phase: "" });
   const [result, setResult] = useState<{ transcription: string; summary: string; actionItems: string[] } | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [selectedActions, setSelectedActions] = useState<string[]>([]);
   const [importSuccess, setImportSuccess] = useState(false);
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const initChunkRef = useRef<Blob | null>(null);   // primeiro chunk — contém o cabeçalho WebM
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Estados do Chat IA
@@ -261,27 +263,38 @@ export default function Dashboard() {
     return `${m}:${s}`;
   };
 
+  // 5 minutos por fatia — ~1-4 MB cada (seguro abaixo do limite de 4.5 MB do Vercel)
+  const SEGMENT_MS = 5 * 60 * 1000;
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      initChunkRef.current = null;
       setRecordingTime(0);
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        if (event.data.size === 0) return;
+        if (!initChunkRef.current) {
+          // Primeiro chunk: contém o cabeçalho EBML/WebM — necessário para decodificação
+          initChunkRef.current = event.data;
           audioChunksRef.current.push(event.data);
+        } else {
+          // Chunks subsequentes: reúne init + dados para formar um WebM completo e válido
+          const segment = new Blob([initChunkRef.current, event.data], { type: "audio/webm" });
+          audioChunksRef.current.push(segment);
         }
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         stream.getTracks().forEach(track => track.stop());
-        await processAudio(audioBlob);
+        await processSegments(audioChunksRef.current);
       };
 
-      mediaRecorder.start();
+      // timeslice: dispara ondataavailable a cada SEGMENT_MS (fatias de 5 min)
+      mediaRecorder.start(SEGMENT_MS);
       setIsRecording(true);
     } catch (err) {
       console.error("Erro ao acessar microfone", err);
@@ -296,31 +309,60 @@ export default function Dashboard() {
     }
   };
 
-  const processAudio = async (audioBlob: Blob) => {
+  const processSegments = async (segments: Blob[]) => {
     setIsProcessing(true);
+    setProcessingProgress({ current: 0, total: segments.length, phase: "transcribe" });
     try {
-      const formData = new FormData();
-      formData.append("file", audioBlob, "recording.webm");
+      let fullTranscript = "";
 
-      const response = await fetch('/api/process-audio', {
-        method: 'POST',
-        body: formData,
-      });
+      for (let i = 0; i < segments.length; i++) {
+        setProcessingProgress({ current: i + 1, total: segments.length, phase: "transcribe" });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Falha ao processar o áudio.");
+        // Para gravações muito curtas (1 segmento), usa modo full direto
+        if (segments.length === 1) {
+          const fd = new FormData();
+          fd.append("file", segments[i], "recording.webm");
+          fd.append("mode", "full");
+          const res = await fetch("/api/process-audio", { method: "POST", body: fd });
+          if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Erro ao processar."); }
+          const data = await res.json();
+          setResult(data);
+          setSelectedActions(data.actionItems ?? []);
+          await supabase.from("notes").insert([{
+            title: `Reunião ${format(new Date(), "dd/MM")}`,
+            transcription: data.transcription,
+            summary: data.summary,
+            user_id: userId,
+          }]);
+          return;
+        }
+
+        // Múltiplos segmentos: transcreve cada um separadamente
+        const fd = new FormData();
+        fd.append("file", segments[i], `segment_${i + 1}.webm`);
+        fd.append("mode", "transcribe");
+        const res = await fetch("/api/process-audio", { method: "POST", body: fd });
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Erro no segmento ${i + 1}.`); }
+        const data = await res.json();
+        fullTranscript += (i > 0 ? " " : "") + data.transcription;
       }
-      
-      const data = await response.json();
-      setResult(data);
-      setSelectedActions(data.actionItems ?? []);
 
-      // Salvar a nota na nuvem (Supabase)
-      await supabase.from('notes').insert([{
+      // Gera o resumo com a transcrição completa combinada
+      setProcessingProgress({ current: segments.length, total: segments.length, phase: "summarize" });
+      const fd = new FormData();
+      fd.append("mode", "summarize");
+      fd.append("transcript", fullTranscript);
+      const res = await fetch("/api/process-audio", { method: "POST", body: fd });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Erro ao gerar resumo."); }
+      const sumData = await res.json();
+
+      setResult({ transcription: fullTranscript, summary: sumData.summary, actionItems: sumData.actionItems });
+      setSelectedActions(sumData.actionItems ?? []);
+
+      await supabase.from("notes").insert([{
         title: `Reunião ${format(new Date(), "dd/MM")}`,
-        transcription: data.transcription,
-        summary: data.summary,
+        transcription: fullTranscript,
+        summary: sumData.summary,
         user_id: userId,
       }]);
 
@@ -330,6 +372,7 @@ export default function Dashboard() {
       alert(`Erro ao processar o áudio:\n\n${msg}`);
     } finally {
       setIsProcessing(false);
+      setProcessingProgress({ current: 0, total: 0, phase: "" });
     }
   };
 
@@ -357,6 +400,9 @@ export default function Dashboard() {
       setRecordingTime(0);
       setSelectedActions([]);
       setImportSuccess(false);
+      setProcessingProgress({ current: 0, total: 0, phase: "" });
+      audioChunksRef.current = [];
+      initChunkRef.current = null;
     }, 300);
   };
 
@@ -722,9 +768,30 @@ export default function Dashboard() {
                 <div className="flex flex-col items-center justify-center py-10">
                   
                   {isProcessing ? (
-                    <div className="flex flex-col items-center gap-4 text-primary">
-                      <Loader2 size={48} className="animate-spin" />
-                      <p className="text-lg font-medium text-white">IA processando o áudio e gerando o resumo...</p>
+                    <div className="flex flex-col items-center gap-5 text-primary w-full max-w-sm">
+                      <Loader2 size={44} className="animate-spin" />
+                      {processingProgress.total > 1 ? (
+                        <>
+                          <p className="text-base font-medium text-white text-center">
+                            {processingProgress.phase === "summarize"
+                              ? "Gerando resumo da reunião completa…"
+                              : `Transcrevendo segmento ${processingProgress.current} de ${processingProgress.total}…`}
+                          </p>
+                          {/* Barra de progresso */}
+                          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all duration-500"
+                              style={{ width: `${Math.round((processingProgress.current / (processingProgress.total + 1)) * 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {processingProgress.total} segmento{processingProgress.total !== 1 ? "s" : ""} de 5 min cada
+                            {" · "}duração total: ~{processingProgress.total * 5} min
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-base font-medium text-white">IA processando o áudio e gerando o resumo…</p>
+                      )}
                     </div>
                   ) : (
                     <>
