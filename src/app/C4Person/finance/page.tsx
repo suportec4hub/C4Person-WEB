@@ -67,6 +67,52 @@ export default function FinancePage() {
     if (budRes.data) setBudgets(budRes.data as Budget[]);
   }, []);
 
+  const exportPDF = () => {
+    const fmtV = (v: number) =>
+      new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+    const currentMonth = format(new Date(), "MMMM 'de' yyyy", { locale: ptBR });
+    const rows = transactions.map(t => `
+      <tr>
+        <td>${t.transaction_date ? format(new Date(t.transaction_date), "dd/MM/yyyy") : "—"}</td>
+        <td>${t.name}</td>
+        <td style="color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "Receita" : "Despesa"}</td>
+        <td>${t.category || "Outros"}</td>
+        <td style="text-align:right;color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "+" : "−"}${fmtV(Number(t.amount))}</td>
+      </tr>`).join("");
+    const totalIn = transactions.filter(t => t.type === "in").reduce((s, t) => s + Number(t.amount), 0);
+    const totalOut = transactions.filter(t => t.type === "out").reduce((s, t) => s + Number(t.amount), 0);
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+      <title>C4Person — Relatório Financeiro</title>
+      <style>
+        body{font-family:sans-serif;color:#111;margin:2cm;font-size:12px}
+        h1{font-size:20px;margin-bottom:4px}
+        p.sub{color:#666;margin-bottom:16px}
+        table{width:100%;border-collapse:collapse}
+        th{background:#f4f4f4;text-align:left;padding:8px;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase}
+        td{padding:7px 8px;border-bottom:1px solid #eee;font-size:12px}
+        .totals{margin-top:16px;display:flex;gap:32px}
+        .total-box{padding:12px 16px;border:1px solid #eee;border-radius:6px;min-width:140px}
+        .total-box .label{font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px}
+        .total-box .value{font-size:18px;font-weight:700}
+        @media print{body{margin:1cm}}
+      </style></head><body>
+      <h1>Relatório Financeiro · C4Person</h1>
+      <p class="sub">Exportado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")} · ${currentMonth}</p>
+      <table>
+        <thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th style="text-align:right">Valor</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="totals">
+        <div class="total-box"><div class="label">Total Receitas</div><div class="value" style="color:#10b981">${fmtV(totalIn)}</div></div>
+        <div class="total-box"><div class="label">Total Despesas</div><div class="value" style="color:#ef4444">${fmtV(totalOut)}</div></div>
+        <div class="total-box"><div class="label">Saldo</div><div class="value" style="color:${totalIn-totalOut>=0?"#10b981":"#ef4444"}">${fmtV(totalIn-totalOut)}</div></div>
+      </div>
+      <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
+      </body></html>`;
+    const w = window.open("", "_blank");
+    if (w) { w.document.write(html); w.document.close(); }
+  };
+
   const exportCSV = () => {
     const header = "Data,Descrição,Tipo,Categoria,Valor";
     const rows = transactions.map(t =>
@@ -273,6 +319,13 @@ export default function FinancePage() {
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Visão Financeira</h1>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={exportPDF}
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
+            title="Exportar PDF"
+          >
+            <Download size={16} /> PDF
+          </button>
           <button
             onClick={exportCSV}
             className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
