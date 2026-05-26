@@ -21,6 +21,7 @@ interface Transaction {
   category: string | null;
   transaction_date: string;
   created_at: string;
+  recurrence?: "none" | "daily" | "weekly" | "monthly";
 }
 
 interface Budget {
@@ -51,6 +52,7 @@ export default function FinancePage() {
   const [newAmount, setNewAmount] = useState("");
   const [newType, setNewType] = useState<"in" | "out">("out");
   const [newCategory, setNewCategory] = useState("Outros");
+  const [newRecurrence, setNewRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
 
   const fetchData = useCallback(async () => {
     const [txRes, budRes] = await Promise.all([
@@ -165,12 +167,13 @@ export default function FinancePage() {
       amount,
       type: newType,
       category: newCategory,
+      recurrence: newRecurrence,
       transaction_date: new Date().toISOString(),
       user_id: userId,
     };
 
     setShowModal(false);
-    setNewName(""); setNewAmount(""); setNewType("out"); setNewCategory("Outros");
+    setNewName(""); setNewAmount(""); setNewType("out"); setNewCategory("Outros"); setNewRecurrence("none");
 
     const { data, error } = await supabase.from("transactions").insert([payload]).select();
     if (data) {
@@ -561,6 +564,11 @@ export default function FinancePage() {
                         {t.category}
                       </span>
                     )}
+                    {t.recurrence && t.recurrence !== "none" && (
+                      <span className="text-xs px-1.5 py-0.5 rounded-md border border-blue-500/30 text-blue-400 bg-blue-500/10">
+                        {{ daily: "Diária", weekly: "Semanal", monthly: "Mensal" }[t.recurrence]}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span className={`text-sm font-bold flex-shrink-0 ${t.type === "in" ? "text-emerald-400" : "text-red-400"}`}>
@@ -714,6 +722,21 @@ export default function FinancePage() {
                         {c.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Repetição</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["none", "daily", "weekly", "monthly"] as const).map(r => {
+                      const labels = { none: "Não repete", daily: "Diária", weekly: "Semanal", monthly: "Mensal" };
+                      return (
+                        <button key={r} type="button" onClick={() => setNewRecurrence(r)}
+                          className={`py-2 rounded-xl text-xs font-medium border transition-colors ${newRecurrence === r ? 'bg-primary/20 text-primary border-primary/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>
+                          {labels[r]}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

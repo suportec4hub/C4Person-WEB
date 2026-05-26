@@ -34,6 +34,14 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 
+function nextRecurrenceDate(recurrence: string, fromIso?: string): string {
+  const base = fromIso ? new Date(fromIso) : new Date();
+  if (recurrence === "daily") base.setDate(base.getDate() + 1);
+  else if (recurrence === "weekly") base.setDate(base.getDate() + 7);
+  else if (recurrence === "monthly") base.setMonth(base.getMonth() + 1);
+  return base.toISOString().slice(0, 10);
+}
+
 function getGreeting() {
   const h = new Date().getHours();
   if (h >= 0 && h < 12) return "Bom dia";
@@ -80,6 +88,7 @@ export default function Dashboard() {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskTime, setNewTaskTime] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<'normal' | 'alta'>('normal');
+  const [newTaskRecurrence, setNewTaskRecurrence] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
 
   // Estados de Hábitos e Transações
   const [habits, setHabits] = useState<any[]>([]);
@@ -140,9 +149,28 @@ export default function Dashboard() {
   }, []);
 
   const toggleTask = async (id: string, currentStatus: boolean) => {
-    // Optimistic update
-    setTasks(tasks.map(t => t.id === id ? { ...t, is_done: !currentStatus } : t));
-    await supabase.from('tasks').update({ is_done: !currentStatus }).eq('id', id);
+    const newStatus = !currentStatus;
+    setTasks(tasks.map(t => t.id === id ? { ...t, is_done: newStatus } : t));
+    await supabase.from("tasks").update({ is_done: newStatus }).eq("id", id);
+    if (newStatus) {
+      const task = tasks.find(t => t.id === id);
+      if (task?.recurrence && task.recurrence !== "none") {
+        const nextDate = nextRecurrenceDate(task.recurrence, task.task_date);
+        const { data } = await supabase.from("tasks").insert([{
+          title: task.title,
+          time: task.time,
+          is_done: false,
+          priority: task.priority,
+          recurrence: task.recurrence,
+          task_date: nextDate,
+          user_id: task.user_id,
+        }]).select();
+        if (data) {
+          setTasks(prev => [...prev, data[0]]);
+          toast({ message: `Próxima recorrência agendada`, type: "success" });
+        }
+      }
+    }
   };
 
   const toggleHabit = async (id: string, currentStatus: boolean, currentStreak: number) => {
@@ -177,8 +205,8 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     
-    const newTask = { title: newTaskTitle, time: newTaskTime || "Livre", is_done: false, priority: newTaskPriority, user_id: userId };
-    
+    const newTask = { title: newTaskTitle, time: newTaskTime || "Livre", is_done: false, priority: newTaskPriority, recurrence: newTaskRecurrence, user_id: userId };
+
     // Optimistic update
     const tempId = Date.now().toString();
     setTasks([...tasks, { id: tempId, ...newTask }]);
@@ -186,6 +214,7 @@ export default function Dashboard() {
     setNewTaskTitle("");
     setNewTaskTime("");
     setNewTaskPriority('normal');
+    setNewTaskRecurrence('none');
 
     const { data, error } = await supabase.from('tasks').insert([newTask]).select();
     if (data) {
@@ -636,6 +665,11 @@ export default function Dashboard() {
                     <span className={`flex-1 ${task.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{task.title}</span>
                     {task.priority === 'alta' && (
                       <span className="text-xs font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full border border-red-500/20">Alta</span>
+                    )}
+                    {task.recurrence && task.recurrence !== 'none' && (
+                      <span className="text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                        {{ daily: "Diária", weekly: "Semanal", monthly: "Mensal" }[task.recurrence as string]}
+                      </span>
                     )}
                     <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock size={12}/> {task.time || "Livre"}</span>
                     <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
@@ -1100,6 +1134,22 @@ export default function Dashboard() {
                   <div className="flex gap-3">
                     <button type="button" onClick={() => setNewTaskPriority('normal')} className={`flex-1 py-2 rounded-lg font-medium border text-sm transition-colors ${newTaskPriority === 'normal' ? 'bg-primary/20 text-primary border-primary/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>Normal</button>
                     <button type="button" onClick={() => setNewTaskPriority('alta')} className={`flex-1 py-2 rounded-lg font-medium border text-sm transition-colors ${newTaskPriority === 'alta' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>Alta</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Repetição</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["none", "daily", "weekly", "monthly"] as const).map(r => {
+                      const labels = { none: "Não repete", daily: "Diária", weekly: "Semanal", monthly: "Mensal" };
+                      const active = newTaskRecurrence === r;
+                      return (
+                        <button key={r} type="button" onClick={() => setNewTaskRecurrence(r)}
+                          className={`py-2 rounded-lg text-xs font-medium border transition-colors ${active ? 'bg-primary/20 text-primary border-primary/50' : 'bg-background border-white/5 text-muted-foreground hover:bg-white/5'}`}>
+                          {labels[r]}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 

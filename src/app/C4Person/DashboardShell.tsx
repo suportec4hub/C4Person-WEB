@@ -7,6 +7,7 @@ import { PomodoroTimer } from "@/components/PomodoroTimer";
 import { SearchModal } from "@/components/SearchModal";
 import { ToastProvider } from "@/components/Toast";
 import { KeyboardHelpModal } from "@/components/KeyboardHelpModal";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
 interface Props {
   children: React.ReactNode;
@@ -42,6 +43,7 @@ export function DashboardShell({ children, isAdmin, showTrialBanner, trialEnd }:
         <PomodoroTimer />
         <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
         <KeyboardHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+        <OnboardingTour />
       </div>
     </ToastProvider>
   );

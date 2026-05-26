@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield, UserCircle, CalendarDays, BarChart3 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const NAV = [
   { href: "/C4Person",          icon: LayoutDashboard, label: "Dashboard" },
@@ -55,6 +56,7 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
         </nav>
 
         <div className="mt-auto flex flex-col gap-4 text-muted-foreground">
+          <NotificationBell />
           <ThemeToggle />
           {isAdmin && (
             <Link
