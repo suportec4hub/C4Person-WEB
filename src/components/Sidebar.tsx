@@ -33,46 +33,49 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
   return (
     <>
       {/* ── Desktop sidebar (md+) ── */}
-      <aside className="hidden md:flex w-20 glass border-r border-border flex-col items-center py-8 gap-8 relative z-10 flex-shrink-0">
-        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-xl shadow-[0_0_15px_rgba(139,92,246,0.5)]">
+      <aside className="hidden md:flex w-16 glass border-r border-border flex-col items-center py-4 gap-0 relative z-10 flex-shrink-0 overflow-y-auto">
+        {/* Logo */}
+        <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-lg shadow-[0_0_15px_rgba(139,92,246,0.5)] mb-4 flex-shrink-0">
           C4
         </div>
 
-        <nav className="flex flex-col gap-6 mt-8 text-muted-foreground">
+        {/* Nav */}
+        <nav className="flex flex-col gap-1 text-muted-foreground flex-1 items-center w-full px-2">
           {NAV.map(({ href, icon: Icon, label }) => (
             <Link
               key={href}
               href={href}
               title={label}
-              className={`p-3 rounded-xl transition-all ${
+              className={`w-full flex items-center justify-center p-2.5 rounded-xl transition-all ${
                 pathname === href
                   ? "bg-white/5 text-primary"
                   : "hover:bg-white/5 hover:text-white"
               }`}
             >
-              <Icon size={22} />
+              <Icon size={20} />
             </Link>
           ))}
         </nav>
 
-        <div className="mt-auto flex flex-col gap-4 text-muted-foreground">
+        {/* Bottom actions */}
+        <div className="flex flex-col gap-1 items-center w-full px-2 pt-2 flex-shrink-0 text-muted-foreground">
           <NotificationBell />
           <ThemeToggle />
           {isAdmin && (
             <Link
               href="/admin"
               title="Painel Admin"
-              className="p-3 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-all"
+              className="w-full flex items-center justify-center p-2.5 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-all"
             >
-              <Shield size={22} />
+              <Shield size={20} />
             </Link>
           )}
           <button
             onClick={handleLogout}
             title="Sair"
-            className="p-3 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-all"
+            className="w-full flex items-center justify-center p-2.5 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-all"
           >
-            <LogOut size={22} />
+            <LogOut size={20} />
           </button>
         </div>
       </aside>
@@ -88,30 +91,30 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all min-w-[44px] ${
+              className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl transition-all min-w-[38px] ${
                 active ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <Icon size={18} />
-              <span className="text-[8px] font-medium">{label}</span>
+              <Icon size={17} />
+              <span className="text-[7px] font-medium leading-none">{label}</span>
             </Link>
           );
         })}
         {isAdmin && (
           <Link
             href="/admin"
-            className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[44px]"
+            className="flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[38px]"
           >
-            <Shield size={18} />
-            <span className="text-[8px] font-medium">Admin</span>
+            <Shield size={17} />
+            <span className="text-[7px] font-medium leading-none">Admin</span>
           </Link>
         )}
         <button
           onClick={handleLogout}
-          className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[44px]"
+          className="flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl text-muted-foreground hover:text-red-400 transition-all min-w-[38px]"
         >
-          <LogOut size={18} />
-          <span className="text-[8px] font-medium">Sair</span>
+          <LogOut size={17} />
+          <span className="text-[7px] font-medium leading-none">Sair</span>
         </button>
       </nav>
     </>

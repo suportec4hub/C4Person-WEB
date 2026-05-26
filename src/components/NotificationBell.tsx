@@ -67,10 +67,10 @@ export function NotificationBell() {
     <div className="relative" ref={panelRef}>
       <button
         onClick={() => { setOpen(v => !v); if (!open) markAllRead(); }}
-        className="p-3 rounded-xl hover:bg-white/5 text-muted-foreground hover:text-white transition-all relative"
+        className="w-full flex items-center justify-center p-2.5 rounded-xl hover:bg-white/5 text-muted-foreground hover:text-white transition-all relative"
         title="Notificações"
       >
-        <Bell size={22} />
+        <Bell size={20} />
         {unreadCount > 0 && (
           <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
             {unreadCount > 9 ? "9+" : unreadCount}
