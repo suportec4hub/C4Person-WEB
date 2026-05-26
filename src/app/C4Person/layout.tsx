@@ -33,8 +33,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     .eq("id", user.id)
     .single();
 
-  const isFullAdmin = profile?.role === "ADMIN_C4HUB";
-  const isElevated = profile?.role === "ADMIN_C4HUB" || profile?.role === "ADM_PADRAO";
+  const isFullAdmin = profile?.role === "ADMIN_C4HUB" || profile?.role === "admin";
+  const isElevated = isFullAdmin || profile?.role === "ADM_PADRAO";
 
   let showTrialBanner = false;
   let trialEnd: string | null = null;

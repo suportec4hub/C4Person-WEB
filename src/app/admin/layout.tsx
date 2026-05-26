@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { isC4HubAdmin } from "@/lib/admin-auth";
 
 const NAV = [
   { href: "/admin",        icon: LayoutDashboard, label: "Visão Geral" },
@@ -40,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq("id", user.id)
     .single();
 
-  if (profile?.role !== "ADMIN_C4HUB") redirect("/C4Person");
+  if (!isC4HubAdmin(profile?.role)) redirect("/C4Person");
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col md:flex-row">
