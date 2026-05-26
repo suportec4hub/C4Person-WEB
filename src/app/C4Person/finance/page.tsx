@@ -54,6 +54,10 @@ export default function FinancePage() {
   const [newCategory, setNewCategory] = useState("Outros");
   const [newRecurrence, setNewRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
 
+  const [savingsGoal, setSavingsGoal] = useState(0);
+  const [showSavingsModal, setShowSavingsModal] = useState(false);
+  const [savingsInput, setSavingsInput] = useState("");
+
   const fetchData = useCallback(async () => {
     const [txRes, budRes] = await Promise.all([
       supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
@@ -86,6 +90,10 @@ export default function FinancePage() {
     setMounted(true);
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
     fetchData().finally(() => setLoading(false));
+    try {
+      const stored = localStorage.getItem("c4person_savings_goal");
+      if (stored) setSavingsGoal(parseFloat(stored));
+    } catch { /* noop */ }
 
     const channel = supabase.channel("finance-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, fetchData)
@@ -492,6 +500,63 @@ export default function FinancePage() {
         )}
       </motion.div>
 
+      {/* Savings Goal */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.39 }}
+        className="glass-card p-6 mb-8"
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <PiggyBank size={18} className="text-pink-400" />
+            Meta de Poupança
+          </h3>
+          <button
+            onClick={() => { setSavingsInput(savingsGoal > 0 ? savingsGoal.toString() : ""); setShowSavingsModal(true); }}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+          >
+            <Plus size={14} /> {savingsGoal > 0 ? "Editar meta" : "Definir meta"}
+          </button>
+        </div>
+
+        {savingsGoal <= 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-pink-500/10 flex items-center justify-center mb-3">
+              <PiggyBank size={22} className="text-pink-400/50" />
+            </div>
+            <p className="text-sm text-muted-foreground">Nenhuma meta definida.</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Defina um valor alvo de poupança.</p>
+          </div>
+        ) : (() => {
+          const current = Math.max(0, balance);
+          const pct = Math.min(100, savingsGoal > 0 ? (current / savingsGoal) * 100 : 0);
+          const done = current >= savingsGoal;
+          return (
+            <div>
+              <div className="flex items-end justify-between mb-3">
+                <div>
+                  <span className="text-3xl font-bold text-white">{fmt(current)}</span>
+                  <span className="text-muted-foreground text-sm ml-2">de {fmt(savingsGoal)}</span>
+                </div>
+                <span className={`text-sm font-semibold ${done ? "text-emerald-400" : "text-pink-400"}`}>
+                  {done ? "Meta atingida!" : `${Math.round(pct)}%`}
+                </span>
+              </div>
+              <div className="h-3 rounded-full bg-white/5 overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${pct}%` }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                  className={`h-full rounded-full ${done ? "bg-emerald-400" : "bg-pink-400"}`}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {done ? `Parabéns! Você atingiu sua meta.` : `Faltam ${fmt(savingsGoal - current)} para atingir a meta.`}
+              </p>
+            </div>
+          );
+        })()}
+      </motion.div>
+
       {/* Transaction list */}
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
@@ -748,6 +813,52 @@ export default function FinancePage() {
                   }`}
                 >
                   Adicionar
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+        {/* Savings goal modal */}
+        {showSavingsModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              className="bg-card border border-white/10 p-8 rounded-3xl w-full max-w-md shadow-2xl relative"
+            >
+              <button onClick={() => setShowSavingsModal(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+              <h2 className="text-2xl font-bold mb-2 text-white flex items-center gap-2">
+                <PiggyBank size={22} className="text-pink-400" /> Meta de Poupança
+              </h2>
+              <p className="text-sm text-muted-foreground mb-6">Defina quanto você quer ter economizado (baseado no saldo total).</p>
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  const v = parseFloat(savingsInput.replace(",", "."));
+                  if (isNaN(v) || v <= 0) return;
+                  setSavingsGoal(v);
+                  try { localStorage.setItem("c4person_savings_goal", v.toString()); } catch { /* noop */ }
+                  setShowSavingsModal(false);
+                }}
+                className="flex flex-col gap-5"
+              >
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Valor alvo (R$)</label>
+                  <input
+                    type="number" step="0.01" autoFocus value={savingsInput} onChange={e => setSavingsInput(e.target.value)}
+                    placeholder="Ex: 10000"
+                    className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-pink-500/50 transition-colors"
+                  />
+                </div>
+                <button
+                  type="submit" disabled={!savingsInput}
+                  className="mt-2 w-full bg-pink-500 hover:bg-pink-500/90 text-white py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Salvar Meta
                 </button>
               </form>
             </motion.div>

@@ -30,9 +30,74 @@ import {
   Bot,
   Send,
   Sparkles,
+  GripVertical,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+function SortableTaskItem({
+  task,
+  onToggle,
+  onDelete,
+}: {
+  task: any;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.45 : 1 };
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className={`group flex items-center gap-3 p-3 rounded-lg border border-white/5 hover:bg-white/5 transition-colors ${task.is_done ? "opacity-50" : ""}`}
+    >
+      <button
+        {...listeners}
+        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/30 hover:text-muted-foreground transition-colors"
+        onClick={e => e.stopPropagation()}
+      >
+        <GripVertical size={15} />
+      </button>
+      <div onClick={onToggle} className="flex-1 flex items-center gap-3 cursor-pointer min-w-0">
+        {task.is_done ? <CheckCircle2 size={20} className="text-accent flex-shrink-0" /> : <Circle size={20} className="text-muted-foreground flex-shrink-0" />}
+        <span className={`flex-1 truncate ${task.is_done ? "line-through text-muted-foreground" : "text-white"}`}>{task.title}</span>
+        {task.priority === "alta" && (
+          <span className="text-xs font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full border border-red-500/20 flex-shrink-0">Alta</span>
+        )}
+        {task.recurrence && task.recurrence !== "none" && (
+          <span className="text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20 flex-shrink-0">
+            {{ daily: "Diária", weekly: "Semanal", monthly: "Mensal" }[task.recurrence as string]}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground flex items-center gap-1 flex-shrink-0"><Clock size={12} /> {task.time || "Livre"}</span>
+      </div>
+      <button
+        onClick={e => { e.stopPropagation(); onDelete(); }}
+        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 flex-shrink-0"
+      >
+        <Trash2 size={14} />
+      </button>
+    </li>
+  );
+}
 
 function nextRecurrenceDate(recurrence: string, fromIso?: string): string {
   const base = fromIso ? new Date(fromIso) : new Date();
@@ -52,6 +117,18 @@ function getGreeting() {
 export default function Dashboard() {
   const { undoToast, toast } = useToast();
   const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setTasks(prev => {
+        const oldIdx = prev.findIndex(t => t.id === active.id);
+        const newIdx = prev.findIndex(t => t.id === over.id);
+        return arrayMove(prev, oldIdx, newIdx);
+      });
+    }
+  };
 
   const [mounted, setMounted] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -651,34 +728,24 @@ export default function Dashboard() {
             )}
 
             <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">Outras Tarefas</h3>
-            <ul className="space-y-3 relative z-10">
-              {otherTasks.length === 0 ? (
-                <p className="text-sm text-muted-foreground italic">Nenhuma tarefa. Adicione uma nova!</p>
-              ) : (
-                otherTasks.map((task) => (
-                  <li
-                    key={task.id}
-                    onClick={() => toggleTask(task.id, task.is_done)}
-                    className={`group flex items-center gap-3 p-3 rounded-lg border border-white/5 hover:bg-white/5 transition-colors ${task.is_done ? 'opacity-50' : ''} cursor-pointer`}
-                  >
-                    {task.is_done ? <CheckCircle2 size={20} className="text-accent" /> : <Circle size={20} className="text-muted-foreground" />}
-                    <span className={`flex-1 ${task.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{task.title}</span>
-                    {task.priority === 'alta' && (
-                      <span className="text-xs font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full border border-red-500/20">Alta</span>
-                    )}
-                    {task.recurrence && task.recurrence !== 'none' && (
-                      <span className="text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
-                        {{ daily: "Diária", weekly: "Semanal", monthly: "Mensal" }[task.recurrence as string]}
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock size={12}/> {task.time || "Livre"}</span>
-                    <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
-                      <Trash2 size={14} />
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
+            {otherTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic relative z-10">Nenhuma tarefa. Adicione uma nova!</p>
+            ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={otherTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                  <ul className="space-y-3 relative z-10">
+                    {otherTasks.map(task => (
+                      <SortableTaskItem
+                        key={task.id}
+                        task={task}
+                        onToggle={() => toggleTask(task.id, task.is_done)}
+                        onDelete={() => deleteTask(task.id)}
+                      />
+                    ))}
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            )}
             
             <button 
               onClick={() => setShowTaskModal(true)}
