@@ -9,21 +9,55 @@ const groq = new OpenAI({
 });
 
 async function generateSummary(transcript: string) {
+  // Estima duração aproximada com base no tamanho do texto (150 palavras/min em pt-BR)
+  const wordCount = transcript.split(/\s+/).length;
+  const estimatedMinutes = Math.round(wordCount / 150);
+  const isLong = estimatedMinutes >= 20; // reunião longa = mais detalhe
+
   const completion = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
+    max_tokens: isLong ? 4096 : 2048,
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
-        content: `Você é um assistente pessoal produtivo. Analise a transcrição e retorne um JSON com exatamente duas chaves:
-- "summary": resumo conciso em Markdown com títulos (## Resumo, ## Pontos Principais) e listas
-- "actionItems": array de strings com as tarefas/ações identificadas (máximo 10 itens, frases curtas e diretas no infinitivo)
+        content: `Você é um assistente executivo especialista em análise de reuniões de negócios. Sua tarefa é analisar a transcrição completa e produzir um relatório COMPLETO, DETALHADO e ESTRUTURADO.
 
-Se não houver tarefas identificadas, retorne "actionItems" como array vazio.
+Retorne um JSON com exatamente duas chaves:
 
+"summary": string em Markdown com TODAS as seções abaixo (use os emojis nos títulos):
+
+## 📋 Visão Geral
+Descreva o contexto, objetivo e participantes mencionados na reunião. 2-4 parágrafos.
+
+## 🗣️ Tópicos Discutidos
+Liste e explique CADA tópico abordado na reunião, com subdetalhes relevantes. Seja completo — não omita nenhum assunto.
+
+## ✅ Decisões Tomadas
+Liste todas as decisões concretas que foram tomadas. Se responsáveis foram mencionados, inclua-os.
+
+## ⚠️ Pontos de Atenção
+Riscos, problemas, bloqueios ou preocupações levantadas durante a reunião.
+
+## 📅 Próximos Passos
+Prazos, datas e responsabilidades definidas na reunião.
+
+## 💡 Insights e Observações
+Observações estratégicas, tendências ou padrões identificados na discussão.
+
+"actionItems": array de strings com TODAS as tarefas e ações identificadas (sem limite de itens). Cada item deve ser:
+- Uma frase direta no infinitivo
+- Incluir o responsável quando mencionado: "Enviar proposta para o cliente (João)"
+- Incluir prazo quando mencionado: "Revisar contrato até sexta-feira"
+- Ser específico e acionável
+
+IMPORTANTE: Seja PROPORCIONAL ao conteúdo. Reuniões longas exigem resumos longos e detalhados. Não resuma demais — capture TODOS os pontos importantes.
 Responda SEMPRE em Português do Brasil.`,
       },
-      { role: "user", content: transcript },
+      {
+        role: "user",
+        content: `Duração estimada da reunião: ~${estimatedMinutes} minutos.\n\nTranscrição completa:\n\n${transcript}`,
+      },
     ],
   });
 

@@ -30,6 +30,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import ReactMarkdown from "react-markdown";
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -263,8 +264,8 @@ export default function Dashboard() {
     return `${m}:${s}`;
   };
 
-  // 5 minutos por fatia — ~1-4 MB cada (seguro abaixo do limite de 4.5 MB do Vercel)
-  const SEGMENT_MS = 5 * 60 * 1000;
+  // 10 minutos por fatia — ~2-4 MB cada (Opus/WebM de voz; seguro abaixo de 4.5 MB do Vercel)
+  const SEGMENT_MS = 10 * 60 * 1000;
 
   const startRecording = async () => {
     try {
@@ -772,25 +773,46 @@ export default function Dashboard() {
                       <Loader2 size={44} className="animate-spin" />
                       {processingProgress.total > 1 ? (
                         <>
-                          <p className="text-base font-medium text-white text-center">
-                            {processingProgress.phase === "summarize"
-                              ? "Gerando resumo da reunião completa…"
-                              : `Transcrevendo segmento ${processingProgress.current} de ${processingProgress.total}…`}
-                          </p>
-                          {/* Barra de progresso */}
-                          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-primary rounded-full transition-all duration-500"
-                              style={{ width: `${Math.round((processingProgress.current / (processingProgress.total + 1)) * 100)}%` }}
-                            />
+                          <div className="text-center space-y-1">
+                            <p className="text-base font-semibold text-white">
+                              {processingProgress.phase === "summarize"
+                                ? "✨ Gerando resumo completo e detalhado…"
+                                : `🎙️ Transcrevendo parte ${processingProgress.current} de ${processingProgress.total}`}
+                            </p>
+                            <p className="text-sm text-muted-foreground">
+                              {processingProgress.phase === "summarize"
+                                ? "Analisando toda a reunião para extrair decisões, tarefas e insights"
+                                : `~${(processingProgress.total - processingProgress.current) * 4}s restantes`}
+                            </p>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {processingProgress.total} segmento{processingProgress.total !== 1 ? "s" : ""} de 5 min cada
-                            {" · "}duração total: ~{processingProgress.total * 5} min
+                          <div className="w-full space-y-1.5">
+                            <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-primary rounded-full transition-all duration-700"
+                                style={{
+                                  width: `${Math.round(
+                                    ((processingProgress.phase === "summarize"
+                                      ? processingProgress.total + 0.8
+                                      : processingProgress.current - 0.5) /
+                                      (processingProgress.total + 1)) * 100
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                              <span>Transcrição</span>
+                              <span>Resumo</span>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground text-center">
+                            Reunião de ~{processingProgress.total * 10} min · {processingProgress.total} segmentos de 10 min
                           </p>
                         </>
                       ) : (
-                        <p className="text-base font-medium text-white">IA processando o áudio e gerando o resumo…</p>
+                        <div className="text-center space-y-1">
+                          <p className="text-base font-semibold text-white">IA processando o áudio…</p>
+                          <p className="text-sm text-muted-foreground">Transcrevendo e gerando resumo detalhado</p>
+                        </div>
                       )}
                     </div>
                   ) : (
@@ -819,8 +841,10 @@ export default function Dashboard() {
                         </button>
                       )}
                       
-                      <p className="mt-8 text-muted-foreground">
-                        {isRecording ? "Gravando... Clique no quadrado para parar e processar." : "Clique no microfone para começar a gravar."}
+                      <p className="mt-8 text-muted-foreground text-center text-sm">
+                        {isRecording
+                          ? `Gravando… Clique no quadrado para parar.\nO áudio será processado em segmentos de 10 min automaticamente.`
+                          : "Clique no microfone para começar a gravar.\nSuporta até 10 horas de reunião."}
                       </p>
                     </>
                   )}
@@ -830,12 +854,38 @@ export default function Dashboard() {
 
                   {/* Resumo */}
                   <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
-                    <h3 className="font-semibold text-primary mb-2 flex items-center gap-2">
+                    <h3 className="font-semibold text-primary mb-3 flex items-center gap-2">
                       <Target size={18} />
                       Resumo da Reunião
                     </h3>
-                    <div className="text-sm text-white/90 leading-relaxed whitespace-pre-wrap">
-                      {result.summary}
+                    <div className="text-sm text-white/90 leading-relaxed prose-meeting">
+                      <ReactMarkdown
+                        components={{
+                          h2: ({ children }) => (
+                            <h2 className="text-base font-bold text-white mt-5 mb-2 first:mt-0">{children}</h2>
+                          ),
+                          h3: ({ children }) => (
+                            <h3 className="text-sm font-semibold text-white/90 mt-3 mb-1">{children}</h3>
+                          ),
+                          ul: ({ children }) => (
+                            <ul className="space-y-1 my-2 ml-3">{children}</ul>
+                          ),
+                          li: ({ children }) => (
+                            <li className="flex gap-2 text-white/85 leading-snug">
+                              <span className="text-primary mt-0.5 flex-shrink-0">•</span>
+                              <span>{children}</span>
+                            </li>
+                          ),
+                          p: ({ children }) => (
+                            <p className="text-white/85 leading-relaxed mb-2">{children}</p>
+                          ),
+                          strong: ({ children }) => (
+                            <strong className="text-white font-semibold">{children}</strong>
+                          ),
+                        }}
+                      >
+                        {result.summary}
+                      </ReactMarkdown>
                     </div>
                   </div>
 

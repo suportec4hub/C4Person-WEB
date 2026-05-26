@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { SkeletonList } from "@/components/Skeleton";
+import ReactMarkdown from "react-markdown";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -225,8 +226,24 @@ export default function NotesPage() {
                       <PenTool size={15} />
                       Resumo da IA
                     </h3>
-                    <div className="text-sm text-white/90 leading-relaxed whitespace-pre-wrap">
-                      {selected.summary}
+                    <div className="text-sm text-white/90 leading-relaxed">
+                      <ReactMarkdown
+                        components={{
+                          h2: ({ children }) => <h2 className="text-base font-bold text-white mt-4 mb-2 first:mt-0">{children}</h2>,
+                          h3: ({ children }) => <h3 className="text-sm font-semibold text-white/90 mt-3 mb-1">{children}</h3>,
+                          ul: ({ children }) => <ul className="space-y-1 my-2 ml-3">{children}</ul>,
+                          li: ({ children }) => (
+                            <li className="flex gap-2 text-white/85 leading-snug">
+                              <span className="text-primary mt-0.5 flex-shrink-0">•</span>
+                              <span>{children}</span>
+                            </li>
+                          ),
+                          p: ({ children }) => <p className="text-white/85 leading-relaxed mb-2">{children}</p>,
+                          strong: ({ children }) => <strong className="text-white font-semibold">{children}</strong>,
+                        }}
+                      >
+                        {selected.summary}
+                      </ReactMarkdown>
                     </div>
                   </div>
                 )}
