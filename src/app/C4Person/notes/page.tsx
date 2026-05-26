@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useToast } from "@/components/Toast";
 import { SkeletonList } from "@/components/Skeleton";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/lib/supabase";
@@ -18,6 +19,8 @@ interface Note {
 }
 
 export default function NotesPage() {
+  const { undoToast } = useToast();
+  const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -47,10 +50,16 @@ export default function NotesPage() {
       n.transcription?.toLowerCase().includes(search.toLowerCase())
     ), [notes, search]);
 
-  const deleteNote = async (id: string) => {
+  const deleteNote = (id: string) => {
+    const item = notes.find(n => n.id === id);
+    if (!item) return;
     setNotes(prev => prev.filter(n => n.id !== id));
     if (selected?.id === id) setSelected(null);
-    await supabase.from("notes").delete().eq("id", id);
+    deleteTimers.current[id] = setTimeout(() => supabase.from("notes").delete().eq("id", id), 5000);
+    undoToast(`Nota "${item.title}" removida`, () => {
+      clearTimeout(deleteTimers.current[id]);
+      setNotes(prev => [item, ...prev]);
+    });
   };
 
   const openNote = (note: Note) => {

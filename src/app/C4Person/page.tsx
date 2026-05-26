@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { SkeletonPage } from "@/components/Skeleton";
+import { useToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { HabitHeatmap } from "@/components/HabitHeatmap";
 import {
   CheckCircle2,
   Circle,
@@ -40,6 +42,9 @@ function getGreeting() {
 }
 
 export default function Dashboard() {
+  const { undoToast, toast } = useToast();
+  const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
   const [mounted, setMounted] = useState(false);
   const [firstName, setFirstName] = useState("");
   const today = new Date();
@@ -78,6 +83,7 @@ export default function Dashboard() {
 
   // Estados de Hábitos e Transações
   const [habits, setHabits] = useState<any[]>([]);
+  const [habitLogs, setHabitLogs] = useState<Record<string, string[]>>({});
   const [transactions, setTransactions] = useState<any[]>([]);
 
   const [showHabitModal, setShowHabitModal] = useState(false);
@@ -113,6 +119,21 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchHabitLogs = useCallback(async () => {
+    const from = subDays(new Date(), 14 * 7).toISOString().slice(0, 10);
+    const { data, error } = await supabase
+      .from("habit_logs")
+      .select("habit_id, log_date")
+      .gte("log_date", from);
+    if (error || !data) return;
+    const map: Record<string, string[]> = {};
+    for (const row of data) {
+      if (!map[row.habit_id]) map[row.habit_id] = [];
+      map[row.habit_id].push(row.log_date);
+    }
+    setHabitLogs(map);
+  }, []);
+
   const fetchTransactions = useCallback(async () => {
     const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
     if (data) setTransactions(data);
@@ -127,13 +148,29 @@ export default function Dashboard() {
   const toggleHabit = async (id: string, currentStatus: boolean, currentStreak: number) => {
     const newStatus = !currentStatus;
     const newStreak = newStatus ? currentStreak + 1 : Math.max(0, currentStreak - 1);
-    const today = new Date().toISOString().slice(0, 10);
+    const todayIso = new Date().toISOString().slice(0, 10);
     setHabits(habits.map(h => h.id === id ? { ...h, is_completed_today: newStatus, streak: newStreak } : h));
-    await supabase.from('habits').update({
+    if (newStatus) {
+      setHabitLogs(prev => ({
+        ...prev,
+        [id]: [...(prev[id] || []).filter(d => d !== todayIso), todayIso],
+      }));
+      supabase.from("habit_logs").upsert(
+        { habit_id: id, log_date: todayIso, user_id: userId },
+        { onConflict: "habit_id,log_date" }
+      );
+    } else {
+      setHabitLogs(prev => ({
+        ...prev,
+        [id]: (prev[id] || []).filter(d => d !== todayIso),
+      }));
+      supabase.from("habit_logs").delete().eq("habit_id", id).eq("log_date", todayIso);
+    }
+    await supabase.from("habits").update({
       is_completed_today: newStatus,
       streak: newStreak,
-      last_completed_date: newStatus ? today : null,
-    }).eq('id', id);
+      last_completed_date: newStatus ? todayIso : null,
+    }).eq("id", id);
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
@@ -186,25 +223,43 @@ export default function Dashboard() {
     if (data) setTransactions(prev => prev.map(t => t.id === tempId ? data[0] : t));
   };
 
-  const deleteTask = async (id: string) => {
+  const deleteTask = (id: string) => {
+    const item = tasks.find(t => t.id === id);
+    if (!item) return;
     setTasks(prev => prev.filter(t => t.id !== id));
-    await supabase.from('tasks').delete().eq('id', id);
+    deleteTimers.current[id] = setTimeout(() => supabase.from('tasks').delete().eq('id', id), 5000);
+    undoToast(`Tarefa "${item.title}" removida`, () => {
+      clearTimeout(deleteTimers.current[id]);
+      setTasks(prev => [...prev, item].sort((a, b) => a.id.localeCompare(b.id)));
+    });
   };
 
-  const deleteHabit = async (id: string) => {
+  const deleteHabit = (id: string) => {
+    const item = habits.find(h => h.id === id);
+    if (!item) return;
     setHabits(prev => prev.filter(h => h.id !== id));
-    await supabase.from('habits').delete().eq('id', id);
+    deleteTimers.current[id] = setTimeout(() => supabase.from('habits').delete().eq('id', id), 5000);
+    undoToast(`Hábito "${item.name}" removido`, () => {
+      clearTimeout(deleteTimers.current[id]);
+      setHabits(prev => [...prev, item]);
+    });
   };
 
-  const deleteTransaction = async (id: string) => {
+  const deleteTransaction = (id: string) => {
+    const item = transactions.find(t => t.id === id);
+    if (!item) return;
     setTransactions(prev => prev.filter(t => t.id !== id));
-    await supabase.from('transactions').delete().eq('id', id);
+    deleteTimers.current[id] = setTimeout(() => supabase.from('transactions').delete().eq('id', id), 5000);
+    undoToast(`"${item.name}" removido`, () => {
+      clearTimeout(deleteTimers.current[id]);
+      setTransactions(prev => [item, ...prev]);
+    });
   };
 
   useEffect(() => {
     setMounted(true);
 
-    Promise.all([fetchTasks(), fetchHabits(), fetchTransactions()]).finally(() => setLoading(false));
+    Promise.all([fetchTasks(), fetchHabits(), fetchTransactions(), fetchHabitLogs()]).finally(() => setLoading(false));
 
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -242,7 +297,7 @@ export default function Dashboard() {
       supabase.removeChannel(channel);
       window.removeEventListener("keydown", onKey);
     };
-  }, [fetchTasks, fetchHabits, fetchTransactions]);
+  }, [fetchTasks, fetchHabits, fetchTransactions, fetchHabitLogs]);
 
   // Timer para o gravador
   useEffect(() => {
@@ -411,36 +466,59 @@ export default function Dashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
 
+  const MAX_CHAT_MESSAGES = 40; // ~20 trocas visíveis na UI
+
   const sendChatMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = chatInput.trim();
     if (!text || isChatLoading) return;
 
     setChatInput("");
-    const updatedHistory = [...chatMessages, { role: "user" as const, content: text }];
-    setChatMessages(updatedHistory);
+    // Mantém no máximo MAX_CHAT_MESSAGES mensagens na UI
+    setChatMessages(prev => {
+      const next = [...prev, { role: "user" as const, content: text }];
+      return next.length > MAX_CHAT_MESSAGES ? next.slice(-MAX_CHAT_MESSAGES) : next;
+    });
     setIsChatLoading(true);
 
     try {
+      // Envia apenas as últimas 6 trocas (12 mensagens) para o histórico
+      // e trunca cada mensagem em 500 chars para não explodir o contexto
+      const trimHistory = (msg: { role: string; content: string }) => ({
+        ...msg,
+        content: msg.content.length > 500 ? msg.content.slice(0, 500) + "…" : msg.content,
+      });
+      const history = chatMessages.slice(-12).map(trimHistory);
+
+      // Contexto resumido (não envia arrays completos, só contagens e totais)
+      const ctx = {
+        totalTasks: tasks.length,
+        doneTasks: tasks.filter(t => t.is_done).length,
+        totalHabits: habits.length,
+        completedHabits: habits.filter(h => h.is_completed_today).length,
+        totalBalance,
+        totalIn,
+        totalOut,
+        recentTransactions: transactions.slice(0, 5).map(t => ({
+          name: t.name, amount: t.amount, type: t.type,
+        })),
+      };
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: chatMessages.slice(-10),
-          context: { tasks, habits, transactions, totalBalance, totalIn, totalOut },
-        }),
+        body: JSON.stringify({ message: text, history, context: ctx }),
       });
       const data = await res.json();
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply || "Não consegui responder. Tente novamente." },
-      ]);
+      setChatMessages(prev => {
+        const next = [...prev, { role: "assistant" as const, content: data.reply || "Não consegui responder. Tente novamente." }];
+        return next.length > MAX_CHAT_MESSAGES ? next.slice(-MAX_CHAT_MESSAGES) : next;
+      });
     } catch {
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Erro ao conectar com a IA. Verifique sua chave de API." },
-      ]);
+      setChatMessages(prev => [...prev, {
+        role: "assistant" as const,
+        content: "Erro ao conectar com a IA. Verifique sua chave de API.",
+      }]);
     } finally {
       setIsChatLoading(false);
     }
@@ -622,6 +700,21 @@ export default function Dashboard() {
               <button onClick={() => setShowHabitModal(true)} className="mt-5 flex items-center gap-2 text-sm text-orange-400 hover:text-orange-300 transition-colors">
                 <Plus size={16} /> Novo Hábito
               </button>
+
+              {/* Heatmaps por hábito */}
+              {habits.length > 0 && (
+                <div className="mt-5 space-y-3 border-t border-white/5 pt-5">
+                  {habits.map(habit => (
+                    <HabitHeatmap
+                      key={habit.id}
+                      habitId={habit.id}
+                      habitName={habit.name}
+                      streak={habit.streak || 0}
+                      logs={habitLogs[habit.id] || []}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Agenda Resumo */}

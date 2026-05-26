@@ -77,8 +77,8 @@ export default function ReportsPage() {
     () => transactions.filter(tx => inWeek(tx.created_at)),
     [transactions, weekStart, weekEnd]
   );
-  const weekIncome  = weekTx.filter(tx => tx.type === "income").reduce((s, tx) => s + Number(tx.amount), 0);
-  const weekExpense = weekTx.filter(tx => tx.type === "expense").reduce((s, tx) => s + Number(tx.amount), 0);
+  const weekIncome  = weekTx.filter(tx => tx.type === "in").reduce((s, tx) => s + Number(tx.amount), 0);
+  const weekExpense = weekTx.filter(tx => tx.type === "out").reduce((s, tx) => s + Number(tx.amount), 0);
 
   // Goals milestone progress
   const msCompleted = useMemo(
@@ -261,7 +261,7 @@ export default function ReportsPage() {
           {/* Category breakdown */}
           {(() => {
             const byCategory: Record<string, number> = {};
-            weekTx.filter(tx => tx.type === "expense").forEach(tx => {
+            weekTx.filter(tx => tx.type === "out").forEach(tx => {
               byCategory[tx.category] = (byCategory[tx.category] ?? 0) + Number(tx.amount);
             });
             const sorted = Object.entries(byCategory).sort(([, a], [, b]) => b - a).slice(0, 5);

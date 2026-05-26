@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { SkeletonPage } from "@/components/Skeleton";
+import { useToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -53,6 +54,9 @@ interface Task {
 
 export default function GoalsPage() {
   const [mounted, setMounted] = useState(false);
+  const { undoToast } = useToast();
+  const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
@@ -121,10 +125,18 @@ export default function GoalsPage() {
     if (data) setGoals((prev) => [data[0], ...prev]);
   };
 
-  const deleteGoal = async (id: string) => {
-    setGoals((prev) => prev.filter((g) => g.id !== id));
-    setMilestones((prev) => prev.filter((m) => m.goal_id !== id));
-    await supabase.from("goals").delete().eq("id", id);
+  const deleteGoal = (id: string) => {
+    const goal = goals.find(g => g.id === id);
+    const goalMilestones = milestones.filter(m => m.goal_id === id);
+    if (!goal) return;
+    setGoals(prev => prev.filter(g => g.id !== id));
+    setMilestones(prev => prev.filter(m => m.goal_id !== id));
+    deleteTimers.current[id] = setTimeout(() => supabase.from("goals").delete().eq("id", id), 5000);
+    undoToast(`Meta "${goal.title}" removida`, () => {
+      clearTimeout(deleteTimers.current[id]);
+      setGoals(prev => [goal, ...prev]);
+      setMilestones(prev => [...prev, ...goalMilestones]);
+    });
   };
 
   const addMilestone = async (goalId: string) => {

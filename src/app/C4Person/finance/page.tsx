@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { SkeletonPage } from "@/components/Skeleton";
+import { useToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -30,6 +31,9 @@ interface Budget {
 
 export default function FinancePage() {
   const [mounted, setMounted] = useState(false);
+  const { undoToast } = useToast();
+  const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [search, setSearch] = useState("");
@@ -180,9 +184,15 @@ export default function FinancePage() {
     }
   };
 
-  const deleteTx = async (id: string) => {
+  const deleteTx = (id: string) => {
+    const item = transactions.find(t => t.id === id);
+    if (!item) return;
     setTransactions(prev => prev.filter(t => t.id !== id));
-    await supabase.from("transactions").delete().eq("id", id);
+    deleteTimers.current[id] = setTimeout(() => supabase.from("transactions").delete().eq("id", id), 5000);
+    undoToast(`"${item.name}" removido`, () => {
+      clearTimeout(deleteTimers.current[id]);
+      setTransactions(prev => [item, ...prev]);
+    });
   };
 
   /* ── budget spend this month ── */
