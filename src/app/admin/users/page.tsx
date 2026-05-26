@@ -191,7 +191,7 @@ export default function AdminUsersPage() {
                               <option value="ADMIN_C4HUB">Admin C4Hub</option>
                             </select>
                             {justSaved && (
-                              <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" title="Salvo!" />
+                              <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
                             )}
                           </>
                         )}
