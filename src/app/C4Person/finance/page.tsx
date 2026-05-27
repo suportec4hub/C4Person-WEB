@@ -68,8 +68,7 @@ export default function FinancePage() {
   }, []);
 
   const exportPDF = () => {
-    const fmtV = (v: number) =>
-      new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+    // Reuse the component-level fmt and the already-memoised totalIn/totalOut
     const currentMonth = format(new Date(), "MMMM 'de' yyyy", { locale: ptBR });
     const rows = transactions.map(t => `
       <tr>
@@ -77,10 +76,8 @@ export default function FinancePage() {
         <td>${t.name}</td>
         <td style="color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "Receita" : "Despesa"}</td>
         <td>${t.category || "Outros"}</td>
-        <td style="text-align:right;color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "+" : "−"}${fmtV(Number(t.amount))}</td>
+        <td style="text-align:right;color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "+" : "−"}${fmt(Number(t.amount))}</td>
       </tr>`).join("");
-    const totalIn = transactions.filter(t => t.type === "in").reduce((s, t) => s + Number(t.amount), 0);
-    const totalOut = transactions.filter(t => t.type === "out").reduce((s, t) => s + Number(t.amount), 0);
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
       <title>C4Person — Relatório Financeiro</title>
       <style>
@@ -103,9 +100,9 @@ export default function FinancePage() {
         <tbody>${rows}</tbody>
       </table>
       <div class="totals">
-        <div class="total-box"><div class="label">Total Receitas</div><div class="value" style="color:#10b981">${fmtV(totalIn)}</div></div>
-        <div class="total-box"><div class="label">Total Despesas</div><div class="value" style="color:#ef4444">${fmtV(totalOut)}</div></div>
-        <div class="total-box"><div class="label">Saldo</div><div class="value" style="color:${totalIn-totalOut>=0?"#10b981":"#ef4444"}">${fmtV(totalIn-totalOut)}</div></div>
+        <div class="total-box"><div class="label">Total Receitas</div><div class="value" style="color:#10b981">${fmt(totalIn)}</div></div>
+        <div class="total-box"><div class="label">Total Despesas</div><div class="value" style="color:#ef4444">${fmt(totalOut)}</div></div>
+        <div class="total-box"><div class="label">Saldo</div><div class="value" style="color:${balance>=0?"#10b981":"#ef4444"}">${fmt(balance)}</div></div>
       </div>
       <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
       </body></html>`;
@@ -233,9 +230,10 @@ export default function FinancePage() {
     if (data) {
       setTransactions(prev => [data[0] as Transaction, ...prev]);
     } else if (error?.message?.includes("category")) {
+      // Fallback: retry without category (keeps recurrence and other fields)
       const { data: d2 } = await supabase
         .from("transactions")
-        .insert([{ name: payload.name, amount, type: newType, transaction_date: payload.transaction_date, user_id: userId }])
+        .insert([{ name: payload.name, amount, type: payload.type, recurrence: payload.recurrence, transaction_date: payload.transaction_date, user_id: userId }])
         .select();
       if (d2) setTransactions(prev => [d2[0] as Transaction, ...prev]);
     }

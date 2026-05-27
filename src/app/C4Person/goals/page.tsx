@@ -131,9 +131,13 @@ export default function GoalsPage() {
     if (!goal) return;
     setGoals(prev => prev.filter(g => g.id !== id));
     setMilestones(prev => prev.filter(m => m.goal_id !== id));
-    deleteTimers.current[id] = setTimeout(() => supabase.from("goals").delete().eq("id", id), 5000);
+    deleteTimers.current[`goal_${id}`] = setTimeout(async () => {
+      // Delete milestone rows first (in case there's no DB cascade), then the goal
+      await supabase.from("milestones").delete().eq("goal_id", id);
+      await supabase.from("goals").delete().eq("id", id);
+    }, 5000);
     undoToast(`Meta "${goal.title}" removida`, () => {
-      clearTimeout(deleteTimers.current[id]);
+      clearTimeout(deleteTimers.current[`goal_${id}`]);
       setGoals(prev => [goal, ...prev]);
       setMilestones(prev => [...prev, ...goalMilestones]);
     });

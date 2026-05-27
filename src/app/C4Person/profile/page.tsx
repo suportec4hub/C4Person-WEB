@@ -24,6 +24,7 @@ interface Subscription {
 
 const ROLE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   ADMIN_C4HUB: { label: "Admin C4Hub",  color: "text-red-400",    bg: "bg-red-500/10" },
+  admin:       { label: "Admin C4Hub",  color: "text-red-400",    bg: "bg-red-500/10" },
   ADM_PADRAO:  { label: "Admin Padrão", color: "text-orange-400", bg: "bg-orange-500/10" },
   user:        { label: "Usuário",       color: "text-primary",    bg: "bg-primary/10" },
 };
@@ -261,7 +262,7 @@ export default function ProfilePage() {
                       : "Acesso completo à plataforma"}
                   </p>
                 </>
-              ) : role === "ADMIN_C4HUB" || role === "ADM_PADRAO" ? (
+              ) : role === "ADMIN_C4HUB" || role === "admin" || role === "ADM_PADRAO" ? (
                 <>
                   <p className="text-sm font-semibold text-primary">Acesso Administrativo</p>
                   <p className="text-xs text-muted-foreground mt-0.5">Acesso completo sem assinatura</p>

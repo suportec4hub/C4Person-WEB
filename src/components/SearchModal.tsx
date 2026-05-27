@@ -52,7 +52,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
     const [tasks, goals, transactions, notes, habits] = await Promise.all([
       supabase.from("tasks").select("id,title,priority").ilike("title", term).limit(4),
       supabase.from("goals").select("id,title,description").ilike("title", term).limit(4),
-      supabase.from("transactions").select("id,description,amount,type").ilike("description", term).limit(4),
+      supabase.from("transactions").select("id,name,amount,type").ilike("name", term).limit(4),
       supabase.from("notes").select("id,title,summary").ilike("title", term).limit(4),
       supabase.from("habits").select("id,name").ilike("name", term).limit(4),
     ]);
@@ -72,8 +72,8 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
       })),
       ...(transactions.data ?? []).map(tr => ({
         id: tr.id, type: "transaction" as const,
-        title: tr.description,
-        subtitle: `${tr.type === "income" ? "+" : "-"} R$ ${Number(tr.amount).toFixed(2)}`,
+        title: tr.name,
+        subtitle: `${tr.type === "in" ? "+" : "-"} R$ ${Number(tr.amount).toFixed(2)}`,
         href: "/C4Person/finance",
       })),
       ...(notes.data ?? []).map(n => ({

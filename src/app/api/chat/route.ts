@@ -6,32 +6,22 @@ interface ChatMessage {
   content: string;
 }
 
-interface Task {
-  title: string;
-  is_done: boolean;
-  priority: string;
-  time: string;
-}
-
-interface Habit {
-  name: string;
-  streak: number;
-  is_completed_today: boolean;
-}
-
-interface Transaction {
+interface RecentTransaction {
   name: string;
   amount: number;
   type: "in" | "out";
 }
 
+// Summary context shape sent by the frontend (avoids sending full arrays)
 interface ChatContext {
-  tasks: Task[];
-  habits: Habit[];
-  transactions: Transaction[];
+  totalTasks: number;
+  doneTasks: number;
+  totalHabits: number;
+  completedHabits: number;
   totalBalance: number;
   totalIn: number;
   totalOut: number;
+  recentTransactions: RecentTransaction[];
 }
 
 // Groq é compatível com a API da OpenAI — basta mudar a baseURL e o modelo
@@ -54,39 +44,11 @@ export async function POST(req: NextRequest) {
       month: "long",
     });
 
-    const tasksPending = context.tasks.filter((t) => !t.is_done);
-    const tasksDone = context.tasks.filter((t) => t.is_done);
-    const habitsToday = context.habits.filter((h) => h.is_completed_today);
-
-    const tasksLine =
-      tasksPending.length > 0
-        ? tasksPending
-            .map(
-              (t) =>
-                `- ${t.title}${t.priority === "alta" ? " [ALTA]" : ""}${t.time !== "Livre" ? ` @ ${t.time}` : ""}`
-            )
-            .join("\n")
-        : "Nenhuma tarefa pendente.";
-
-    const doneLine =
-      tasksDone.length > 0
-        ? `\nConcluídas hoje: ${tasksDone.map((t) => t.title).join(", ")}`
-        : "";
-
-    const habitsLine =
-      context.habits.length > 0
-        ? context.habits
-            .map(
-              (h) =>
-                `- ${h.name}: ${h.is_completed_today ? "✓ feito hoje" : "○ pendente"} | ${h.streak} dias de streak`
-            )
-            .join("\n")
-        : "Nenhum hábito cadastrado.";
+    const pendingTasks = context.totalTasks - context.doneTasks;
 
     const txLine =
-      context.transactions.length > 0
-        ? context.transactions
-            .slice(0, 10)
+      context.recentTransactions.length > 0
+        ? context.recentTransactions
             .map(
               (t) =>
                 `  ${t.type === "in" ? "+" : "-"}R$ ${Number(t.amount).toFixed(2)} — ${t.name}`
@@ -101,16 +63,13 @@ export async function POST(req: NextRequest) {
       "",
       "=== DADOS DO USUÁRIO ===",
       "",
-      `TAREFAS (${tasksPending.length} pendentes, ${tasksDone.length} concluídas):`,
-      tasksLine,
-      doneLine,
+      `TAREFAS: ${pendingTasks} pendentes, ${context.doneTasks} concluídas (total ${context.totalTasks}).`,
       "",
-      `HÁBITOS (${habitsToday.length}/${context.habits.length} concluídos hoje):`,
-      habitsLine,
+      `HÁBITOS: ${context.completedHabits} de ${context.totalHabits} concluídos hoje.`,
       "",
       "FINANÇAS:",
-      `- Saldo atual: R$ ${context.totalBalance.toFixed(2)}`,
-      `- Receitas: R$ ${context.totalIn.toFixed(2)} | Despesas: R$ ${context.totalOut.toFixed(2)}`,
+      `- Saldo atual: R$ ${(context.totalBalance ?? 0).toFixed(2)}`,
+      `- Receitas: R$ ${(context.totalIn ?? 0).toFixed(2)} | Despesas: R$ ${(context.totalOut ?? 0).toFixed(2)}`,
       "- Últimas transações:",
       txLine,
     ].join("\n");
@@ -120,7 +79,7 @@ export async function POST(req: NextRequest) {
       max_tokens: 600,
       messages: [
         { role: "system", content: systemPrompt },
-        ...history.slice(-10),
+        ...history.slice(-12),
         { role: "user", content: message },
       ],
     });

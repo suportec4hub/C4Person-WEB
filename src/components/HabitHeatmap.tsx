@@ -12,8 +12,6 @@ interface Props {
 }
 
 const WEEKS = 14; // 14 semanas = ~3 meses
-const today = new Date();
-const start = subDays(today, WEEKS * 7 - 1);
 
 function intensityClass(count: number): string {
   if (count === 0) return "bg-white/5";
@@ -21,9 +19,13 @@ function intensityClass(count: number): string {
 }
 
 export function HabitHeatmap({ habitName, streak, logs }: Props) {
+  // Computed inside the component so they refresh on re-render (e.g. app left open past midnight)
+  const today = useMemo(() => new Date(), []);
+  const start = useMemo(() => subDays(today, WEEKS * 7 - 1), [today]);
+
   const days = useMemo(() =>
     eachDayOfInterval({ start, end: today }),
-    []
+    [start, today]
   );
 
   const logSet = useMemo(() => new Set(logs), [logs]);

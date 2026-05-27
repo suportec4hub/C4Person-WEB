@@ -119,7 +119,7 @@ export default function Dashboard() {
   const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
       setTasks(prev => {
@@ -128,7 +128,7 @@ export default function Dashboard() {
         return arrayMove(prev, oldIdx, newIdx);
       });
     }
-  };
+  }, []);
 
   const [mounted, setMounted] = useState(false);
   const [firstName, setFirstName] = useState("");
@@ -227,10 +227,11 @@ export default function Dashboard() {
 
   const toggleTask = async (id: string, currentStatus: boolean) => {
     const newStatus = !currentStatus;
-    setTasks(tasks.map(t => t.id === id ? { ...t, is_done: newStatus } : t));
+    // Capture task BEFORE the optimistic setTasks so we read the correct state
+    const task = tasks.find(t => t.id === id);
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, is_done: newStatus } : t));
     await supabase.from("tasks").update({ is_done: newStatus }).eq("id", id);
     if (newStatus) {
-      const task = tasks.find(t => t.id === id);
       if (task?.recurrence && task.recurrence !== "none") {
         const nextDate = nextRecurrenceDate(task.recurrence, task.task_date);
         const { data } = await supabase.from("tasks").insert([{
@@ -330,13 +331,19 @@ export default function Dashboard() {
   };
 
   const deleteTask = (id: string) => {
-    const item = tasks.find(t => t.id === id);
+    const idx = tasks.findIndex(t => t.id === id);
+    const item = tasks[idx];
     if (!item) return;
     setTasks(prev => prev.filter(t => t.id !== id));
-    deleteTimers.current[id] = setTimeout(() => supabase.from('tasks').delete().eq('id', id), 5000);
+    deleteTimers.current[`task_${id}`] = setTimeout(() => supabase.from('tasks').delete().eq('id', id), 5000);
     undoToast(`Tarefa "${item.title}" removida`, () => {
-      clearTimeout(deleteTimers.current[id]);
-      setTasks(prev => [...prev, item].sort((a, b) => a.id.localeCompare(b.id)));
+      clearTimeout(deleteTimers.current[`task_${id}`]);
+      // Restore at original position, preserving drag order
+      setTasks(prev => {
+        const next = [...prev];
+        next.splice(Math.min(idx, next.length), 0, item);
+        return next;
+      });
     });
   };
 
@@ -344,9 +351,9 @@ export default function Dashboard() {
     const item = habits.find(h => h.id === id);
     if (!item) return;
     setHabits(prev => prev.filter(h => h.id !== id));
-    deleteTimers.current[id] = setTimeout(() => supabase.from('habits').delete().eq('id', id), 5000);
+    deleteTimers.current[`habit_${id}`] = setTimeout(() => supabase.from('habits').delete().eq('id', id), 5000);
     undoToast(`Hábito "${item.name}" removido`, () => {
-      clearTimeout(deleteTimers.current[id]);
+      clearTimeout(deleteTimers.current[`habit_${id}`]);
       setHabits(prev => [...prev, item]);
     });
   };
@@ -355,9 +362,9 @@ export default function Dashboard() {
     const item = transactions.find(t => t.id === id);
     if (!item) return;
     setTransactions(prev => prev.filter(t => t.id !== id));
-    deleteTimers.current[id] = setTimeout(() => supabase.from('transactions').delete().eq('id', id), 5000);
+    deleteTimers.current[`tx_${id}`] = setTimeout(() => supabase.from('transactions').delete().eq('id', id), 5000);
     undoToast(`"${item.name}" removido`, () => {
-      clearTimeout(deleteTimers.current[id]);
+      clearTimeout(deleteTimers.current[`tx_${id}`]);
       setTransactions(prev => [item, ...prev]);
     });
   };
@@ -580,21 +587,26 @@ export default function Dashboard() {
     if (!text || isChatLoading) return;
 
     setChatInput("");
-    // Mantém no máximo MAX_CHAT_MESSAGES mensagens na UI
+    setIsChatLoading(true);
+
+    // Build history BEFORE updating state (to include the current user message correctly)
+    const trimHistory = (msg: { role: string; content: string }) => ({
+      ...msg,
+      content: msg.content.length > 500 ? msg.content.slice(0, 500) + "…" : msg.content,
+    });
+    // Last 11 prior messages + current user message = 12 total sent to API
+    const history = [
+      ...chatMessages.slice(-11).map(trimHistory),
+      { role: "user" as const, content: text },
+    ];
+
+    // Update UI after capturing history
     setChatMessages(prev => {
       const next = [...prev, { role: "user" as const, content: text }];
       return next.length > MAX_CHAT_MESSAGES ? next.slice(-MAX_CHAT_MESSAGES) : next;
     });
-    setIsChatLoading(true);
 
     try {
-      // Envia apenas as últimas 6 trocas (12 mensagens) para o histórico
-      // e trunca cada mensagem em 500 chars para não explodir o contexto
-      const trimHistory = (msg: { role: string; content: string }) => ({
-        ...msg,
-        content: msg.content.length > 500 ? msg.content.slice(0, 500) + "…" : msg.content,
-      });
-      const history = chatMessages.slice(-12).map(trimHistory);
 
       // Contexto resumido (não envia arrays completos, só contagens e totais)
       const ctx = {
