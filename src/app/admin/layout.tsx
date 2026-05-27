@@ -44,9 +44,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!isC4HubAdmin(profile?.role)) redirect("/C4Person");
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col md:flex-row">
+    <div className="min-h-dvh bg-background text-foreground flex flex-col md:flex-row">
       {/* ── Mobile top bar ── */}
-      <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-background/90 backdrop-blur-sm sticky top-0 z-50">
+      {/* pt-safe-3: padding-top = env(safe-area-inset-top) + 0.75rem so content
+          clears the Dynamic Island / status bar on iPhone */}
+      <div className="md:hidden flex items-center gap-3 px-4 pb-3 pt-safe-3 border-b border-white/5 bg-background/90 backdrop-blur-sm sticky top-0 z-50">
         <div className="w-7 h-7 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0">
           <Shield size={13} className="text-red-400" />
         </div>
@@ -106,7 +108,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto p-8">{children}</main>
+      <main className="flex-1 overflow-auto p-6 md:p-8">{children}</main>
     </div>
   );
 }

@@ -81,10 +81,9 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
       </aside>
 
       {/* ── Mobile bottom nav ── */}
-      <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass border-t border-white/10 flex items-center justify-around px-1 pt-2"
-        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom, 0.5rem))" }}
-      >
+      {/* pb-safe-2: padding-bottom = env(safe-area-inset-bottom) + 0.5rem
+          so nav icons clear the home-indicator bar on iPhone */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass border-t border-white/10 flex items-center justify-around px-1 pt-2 pb-safe-2 pl-safe pr-safe">
         {NAV.map(({ href, icon: Icon, label }) => {
           const active = pathname === href;
           return (

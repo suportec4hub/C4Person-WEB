@@ -35,9 +35,11 @@ export function DashboardShell({ children, isAdmin, showTrialBanner, trialEnd }:
 
   return (
     <ToastProvider>
-      <div className="flex h-screen overflow-hidden">
+      {/* h-dvh: 100dvh accounts for iOS browser chrome disappearing on scroll */}
+      <div className="flex h-dvh overflow-hidden">
         <Sidebar isAdmin={isAdmin} />
-        <div className="flex-1 flex flex-col overflow-hidden">
+        {/* pt-safe: pushes content below the Dynamic Island / status bar on iOS */}
+        <div className="flex-1 flex flex-col overflow-hidden pt-safe">
           {showTrialBanner && parsedTrialEnd && <TrialBanner trialEnd={parsedTrialEnd} />}
           {children}
         </div>
