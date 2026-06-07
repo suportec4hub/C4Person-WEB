@@ -11,7 +11,13 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-async function abacate(path: string, body?: object) {
+interface AbacateResponse {
+  data?: Record<string, unknown> | null;
+  error?: string;
+  [key: string]: unknown;
+}
+
+async function abacate(path: string, body?: object): Promise<AbacateResponse> {
   const res = await fetch(`${API}${path}`, {
     method: body ? "POST" : "GET",
     headers: {
@@ -20,16 +26,37 @@ async function abacate(path: string, body?: object) {
     },
     ...(body && { body: JSON.stringify(body) }),
   });
-  return res.json();
+
+  const text = await res.text();
+  console.log(`[AbacatePay] ${body ? "POST" : "GET"} ${path} → ${res.status}: ${text.slice(0, 300)}`);
+
+  try {
+    return JSON.parse(text) as AbacateResponse;
+  } catch {
+    console.error(`[AbacatePay] Non-JSON response (${res.status}):`, text.slice(0, 500));
+    throw new Error(`AbacatePay ${res.status}: ${text.slice(0, 200)}`);
+  }
 }
 
 async function ensureCustomer(email: string, name?: string): Promise<string> {
   const list = await abacate("/customers/list");
-  const found = list.data?.find((c: { email: string; id: string }) => c.email === email);
-  if (found) return found.id;
+  const customers = Array.isArray(list.data) ? list.data : [];
+  const found = customers.find((c: unknown) => {
+    const customer = c as { email?: string; id?: string };
+    return customer.email === email;
+  });
+  if (found) {
+    const customer = found as { id: string };
+    return customer.id;
+  }
 
   const created = await abacate("/customers/create", { email, name });
-  return created.data.id;
+  const createdData = created.data as { id?: string } | null;
+  if (!createdData?.id) {
+    console.error("[AbacatePay] Customer create returned no id:", created);
+    throw new Error(created.error ?? "Falha ao criar cliente no AbacatePay");
+  }
+  return createdData.id;
 }
 
 export async function POST(req: NextRequest) {
@@ -79,18 +106,23 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Fetch billing link URL
+    // Fetch billing link URL — try data.url first, then top-level url
     const billing = await abacate(`/billing/${BILLING_ID}`);
-    const url = billing.data?.url;
+    const billingData = billing.data as { url?: string } | null;
+    const url = billingData?.url ?? (billing.url as string | undefined);
 
     if (!url) {
-      console.error("AbacatePay billing link error:", billing);
-      return NextResponse.json({ error: billing.error || "Erro ao obter link de pagamento" }, { status: 500 });
+      console.error("[AbacatePay] No URL in billing response:", billing);
+      return NextResponse.json(
+        { error: (billing.error as string) ?? "Erro ao obter link de pagamento" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ url });
   } catch (err) {
-    console.error("Checkout error:", err);
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[Checkout] Error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
