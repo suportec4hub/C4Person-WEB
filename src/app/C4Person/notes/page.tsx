@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
-import { PenTool, Search, Trash2, X, Mic, FileText, ChevronDown, ChevronUp } from "lucide-react";
+import { PenTool, Search, Trash2, X, Mic, FileText, ChevronDown, ChevronUp, Edit2, Check } from "lucide-react";
 
 interface Note {
   id: string;
@@ -27,6 +27,8 @@ export default function NotesPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Note | null>(null);
   const [expandedTranscription, setExpandedTranscription] = useState(false);
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
 
   const fetchNotes = useCallback(async () => {
     const { data } = await supabase.from("notes").select("*").order("created_at", { ascending: false });
@@ -62,7 +64,23 @@ export default function NotesPage() {
     });
   };
 
+  const startEditTitle = (e: React.MouseEvent, note: Note) => {
+    e.stopPropagation();
+    setEditingTitleId(note.id);
+    setDraftTitle(note.title);
+  };
+
+  const saveTitle = async (id: string) => {
+    const trimmed = draftTitle.trim();
+    if (!trimmed) { setEditingTitleId(null); return; }
+    setNotes(prev => prev.map(n => n.id === id ? { ...n, title: trimmed } : n));
+    if (selected?.id === id) setSelected(prev => prev ? { ...prev, title: trimmed } : prev);
+    setEditingTitleId(null);
+    await supabase.from("notes").update({ title: trimmed }).eq("id", id);
+  };
+
   const openNote = (note: Note) => {
+    if (editingTitleId === note.id) return;
     setSelected(note);
     setExpandedTranscription(false);
   };
@@ -143,7 +161,7 @@ export default function NotesPage() {
               {/* Delete */}
               <button
                 onClick={e => { e.stopPropagation(); deleteNote(note.id); }}
-                className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 z-10"
+                className="absolute top-3 right-3 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 z-10"
               >
                 <Trash2 size={15} />
               </button>
@@ -153,8 +171,31 @@ export default function NotesPage() {
                 <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <Mic size={17} className="text-primary" />
                 </div>
-                <div className="min-w-0">
-                  <h3 className="font-semibold text-white text-sm leading-snug line-clamp-2">{note.title}</h3>
+                <div className="min-w-0 flex-1">
+                  {editingTitleId === note.id ? (
+                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      <input
+                        autoFocus
+                        value={draftTitle}
+                        onChange={e => setDraftTitle(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") saveTitle(note.id); if (e.key === "Escape") setEditingTitleId(null); }}
+                        className="flex-1 bg-white/5 border border-white/20 rounded-lg px-2 py-1 text-white text-sm font-semibold focus:outline-none focus:border-primary/50 min-w-0"
+                      />
+                      <button onClick={() => saveTitle(note.id)} className="text-emerald-400 hover:text-emerald-300 p-0.5 flex-shrink-0">
+                        <Check size={14} />
+                      </button>
+                      <button onClick={() => setEditingTitleId(null)} className="text-muted-foreground hover:text-white p-0.5 flex-shrink-0">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-1 group/title">
+                      <h3 className="font-semibold text-white text-sm leading-snug line-clamp-2 flex-1">{note.title}</h3>
+                      <button onClick={e => startEditTitle(e, note)} className="opacity-0 group-hover/title:opacity-100 md:opacity-0 md:group-hover/title:opacity-100 text-muted-foreground hover:text-white transition-all p-0.5 flex-shrink-0 mt-0.5">
+                        <Edit2 size={11} />
+                      </button>
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground mt-1">
                     {format(new Date(note.created_at), "d 'de' MMMM 'de' yyyy · HH:mm", { locale: ptBR })}
                   </p>
@@ -198,12 +239,31 @@ export default function NotesPage() {
             >
               {/* Modal header */}
               <div className="flex items-start justify-between p-7 pb-4 border-b border-white/10">
-                <div className="flex items-start gap-3 pr-8">
+                <div className="flex items-start gap-3 pr-8 flex-1 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0">
                     <Mic size={19} className="text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white leading-snug">{selected.title}</h2>
+                  <div className="min-w-0 flex-1">
+                    {editingTitleId === selected.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          autoFocus
+                          value={draftTitle}
+                          onChange={e => setDraftTitle(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") saveTitle(selected.id); if (e.key === "Escape") setEditingTitleId(null); }}
+                          className="flex-1 bg-white/5 border border-white/20 rounded-lg px-3 py-1.5 text-white text-lg font-bold focus:outline-none focus:border-primary/50"
+                        />
+                        <button onClick={() => saveTitle(selected.id)} className="text-emerald-400 hover:text-emerald-300 p-1 flex-shrink-0"><Check size={16} /></button>
+                        <button onClick={() => setEditingTitleId(null)} className="text-muted-foreground hover:text-white p-1 flex-shrink-0"><X size={16} /></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 group/modal-title">
+                        <h2 className="text-xl font-bold text-white leading-snug flex-1">{selected.title}</h2>
+                        <button onClick={e => startEditTitle(e, selected)} className="opacity-0 group-hover/modal-title:opacity-100 text-muted-foreground hover:text-white transition-all p-1 flex-shrink-0 mt-0.5">
+                          <Edit2 size={14} />
+                        </button>
+                      </div>
+                    )}
                     <p className="text-sm text-muted-foreground mt-0.5">
                       {format(new Date(selected.created_at), "d 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
                     </p>

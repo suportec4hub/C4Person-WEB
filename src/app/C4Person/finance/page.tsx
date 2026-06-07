@@ -520,7 +520,7 @@ export default function FinancePage() {
                 <div key={b.id} className="group relative p-4 rounded-2xl bg-white/3 border border-white/8 hover:border-white/15 transition-all">
                   <button
                     onClick={() => deleteBudget(b.id)}
-                    className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5"
+                    className="absolute top-3 right-3 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5"
                   >
                     <X size={13} />
                   </button>
@@ -692,7 +692,7 @@ export default function FinancePage() {
                 </span>
                 <button
                   onClick={() => deleteTx(t.id)}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 flex-shrink-0"
+                  className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 flex-shrink-0"
                 >
                   <Trash2 size={14} />
                 </button>

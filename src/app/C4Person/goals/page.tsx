@@ -212,7 +212,7 @@ export default function GoalsPage() {
         className="mb-6 md:mb-10 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end"
       >
         <div>
-          <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Nexus</h2>
+          <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Metas</h2>
           <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Minhas Metas</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {activeGoals.length} ativa{activeGoals.length !== 1 ? "s" : ""}
@@ -483,7 +483,7 @@ function GoalCard({
       {/* Delete goal */}
       <button
         onClick={onDeleteGoal}
-        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 z-10"
+        className="absolute top-3 right-3 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 z-10"
       >
         <Trash2 size={15} />
       </button>

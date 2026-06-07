@@ -18,8 +18,8 @@ const STEPS = [
     color: "text-accent",
     bg: "bg-accent/15",
     title: "Defina suas Metas",
-    description: "No módulo Nexus, crie grandes objetivos e divida-os em marcos menores. Acompanhe seu progresso visualmente.",
-    hint: "Acesse pelo menu lateral → Nexus.",
+    description: "No módulo Meta, crie grandes objetivos e divida-os em marcos menores. Acompanhe seu progresso visualmente.",
+    hint: "Acesse pelo menu lateral → Meta.",
   },
   {
     icon: Wallet,

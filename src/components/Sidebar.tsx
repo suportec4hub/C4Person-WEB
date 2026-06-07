@@ -9,7 +9,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 
 const NAV = [
   { href: "/C4Person",          icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/C4Person/goals",    icon: Target,          label: "Nexus" },
+  { href: "/C4Person/goals",    icon: Target,          label: "Meta" },
   { href: "/C4Person/finance",  icon: Wallet,          label: "Finanças" },
   { href: "/C4Person/notes",    icon: PenTool,         label: "Notas" },
   { href: "/C4Person/calendar", icon: CalendarDays,    label: "Calendário" },

@@ -91,7 +91,7 @@ function SortableTaskItem({
       </div>
       <button
         onClick={e => { e.stopPropagation(); onDelete(); }}
-        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 flex-shrink-0"
+        className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 flex-shrink-0"
       >
         <Trash2 size={14} />
       </button>
@@ -482,6 +482,10 @@ export default function Dashboard() {
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: segments.length, phase: "transcribe" });
     try {
+      // Get fresh user ID at save time — avoids stale closure from startRecording
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const uid = authUser?.id ?? userId;
+
       let fullTranscript = "";
 
       for (let i = 0; i < segments.length; i++) {
@@ -497,12 +501,17 @@ export default function Dashboard() {
           const data = await res.json();
           setResult(data);
           setSelectedActions(data.actionItems ?? []);
-          await supabase.from("notes").insert([{
-            title: `Reunião ${format(new Date(), "dd/MM")}`,
+          const { error: noteErr } = await supabase.from("notes").insert([{
+            title: `Reunião ${format(new Date(), "dd/MM 'às' HH:mm")}`,
             transcription: data.transcription,
             summary: data.summary,
-            user_id: userId,
+            user_id: uid,
           }]);
+          if (noteErr) {
+            console.error("[notes] insert failed:", noteErr.message);
+          } else {
+            toast({ message: "Reunião salva em Notas!", type: "success" });
+          }
           return;
         }
 
@@ -528,12 +537,17 @@ export default function Dashboard() {
       setResult({ transcription: fullTranscript, summary: sumData.summary, actionItems: sumData.actionItems });
       setSelectedActions(sumData.actionItems ?? []);
 
-      await supabase.from("notes").insert([{
-        title: `Reunião ${format(new Date(), "dd/MM")}`,
+      const { error: noteErr } = await supabase.from("notes").insert([{
+        title: `Reunião ${format(new Date(), "dd/MM 'às' HH:mm")}`,
         transcription: fullTranscript,
         summary: sumData.summary,
-        user_id: userId,
+        user_id: uid,
       }]);
+      if (noteErr) {
+        console.error("[notes] insert failed:", noteErr.message);
+      } else {
+        toast({ message: "Reunião salva em Notas!", type: "success" });
+      }
 
     } catch (error) {
       console.error(error);
@@ -728,7 +742,7 @@ export default function Dashboard() {
                     <div className="bg-red-500/20 text-red-400 text-xs font-medium px-3 py-1 rounded-full border border-red-500/30">Alta</div>
                   )}
                   <div className="bg-primary/20 text-primary text-xs font-medium px-3 py-1 rounded-full">Principal</div>
-                  <button onClick={(e) => { e.stopPropagation(); deleteTask(topPriorityTask.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
+                  <button onClick={(e) => { e.stopPropagation(); deleteTask(topPriorityTask.id); }} className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
                     <Trash2 size={16} />
                   </button>
                 </div>
