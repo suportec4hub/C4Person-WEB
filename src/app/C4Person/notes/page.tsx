@@ -21,6 +21,7 @@ interface Note {
 export default function NotesPage() {
   const { undoToast } = useToast();
   const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const pendingDeletes = useRef<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -32,7 +33,7 @@ export default function NotesPage() {
 
   const fetchNotes = useCallback(async () => {
     const { data } = await supabase.from("notes").select("*").order("created_at", { ascending: false });
-    if (data) setNotes(data as Note[]);
+    if (data) setNotes((data as Note[]).filter(n => !pendingDeletes.current.has(n.id)));
   }, []);
 
   useEffect(() => {
@@ -55,11 +56,16 @@ export default function NotesPage() {
   const deleteNote = (id: string) => {
     const item = notes.find(n => n.id === id);
     if (!item) return;
+    pendingDeletes.current.add(id);
     setNotes(prev => prev.filter(n => n.id !== id));
     if (selected?.id === id) setSelected(null);
-    deleteTimers.current[id] = setTimeout(() => supabase.from("notes").delete().eq("id", id), 5000);
+    deleteTimers.current[id] = setTimeout(() => {
+      supabase.from("notes").delete().eq("id", id);
+      pendingDeletes.current.delete(id);
+    }, 5000);
     undoToast(`Nota "${item.title}" removida`, () => {
       clearTimeout(deleteTimers.current[id]);
+      pendingDeletes.current.delete(id);
       setNotes(prev => [item, ...prev]);
     });
   };

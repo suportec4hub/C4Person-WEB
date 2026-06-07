@@ -117,6 +117,9 @@ function getGreeting() {
 export default function Dashboard() {
   const { undoToast, toast } = useToast();
   const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  // IDs being deleted optimistically — filtered out on every re-fetch so Realtime
+  // events don't resurrect items during the 5-second undo window
+  const pendingDeletes = useRef<Set<string>>(new Set());
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
@@ -182,7 +185,7 @@ export default function Dashboard() {
 
   const fetchTasks = useCallback(async () => {
     const { data } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
-    if (data) setTasks(data);
+    if (data) setTasks(data.filter(t => !pendingDeletes.current.has(t.id)));
   }, []);
 
   const fetchHabits = useCallback(async () => {
@@ -198,9 +201,9 @@ export default function Dashboard() {
           )
         );
         const { data: refreshed } = await supabase.from('habits').select('*').order('created_at', { ascending: true });
-        if (refreshed) setHabits(refreshed);
+        if (refreshed) setHabits(refreshed.filter(h => !pendingDeletes.current.has(h.id)));
       } else {
-        setHabits(data);
+        setHabits(data.filter((h: any) => !pendingDeletes.current.has(h.id)));
       }
     }
   }, []);
@@ -222,7 +225,7 @@ export default function Dashboard() {
 
   const fetchTransactions = useCallback(async () => {
     const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
-    if (data) setTransactions(data);
+    if (data) setTransactions(data.filter(t => !pendingDeletes.current.has(t.id)));
   }, []);
 
   const toggleTask = async (id: string, currentStatus: boolean) => {
@@ -334,10 +337,15 @@ export default function Dashboard() {
     const idx = tasks.findIndex(t => t.id === id);
     const item = tasks[idx];
     if (!item) return;
+    pendingDeletes.current.add(id);
     setTasks(prev => prev.filter(t => t.id !== id));
-    deleteTimers.current[`task_${id}`] = setTimeout(() => supabase.from('tasks').delete().eq('id', id), 5000);
+    deleteTimers.current[`task_${id}`] = setTimeout(() => {
+      supabase.from('tasks').delete().eq('id', id);
+      pendingDeletes.current.delete(id);
+    }, 5000);
     undoToast(`Tarefa "${item.title}" removida`, () => {
       clearTimeout(deleteTimers.current[`task_${id}`]);
+      pendingDeletes.current.delete(id);
       // Restore at original position, preserving drag order
       setTasks(prev => {
         const next = [...prev];
@@ -350,10 +358,15 @@ export default function Dashboard() {
   const deleteHabit = (id: string) => {
     const item = habits.find(h => h.id === id);
     if (!item) return;
+    pendingDeletes.current.add(id);
     setHabits(prev => prev.filter(h => h.id !== id));
-    deleteTimers.current[`habit_${id}`] = setTimeout(() => supabase.from('habits').delete().eq('id', id), 5000);
+    deleteTimers.current[`habit_${id}`] = setTimeout(() => {
+      supabase.from('habits').delete().eq('id', id);
+      pendingDeletes.current.delete(id);
+    }, 5000);
     undoToast(`Hábito "${item.name}" removido`, () => {
       clearTimeout(deleteTimers.current[`habit_${id}`]);
+      pendingDeletes.current.delete(id);
       setHabits(prev => [...prev, item]);
     });
   };
@@ -361,10 +374,15 @@ export default function Dashboard() {
   const deleteTransaction = (id: string) => {
     const item = transactions.find(t => t.id === id);
     if (!item) return;
+    pendingDeletes.current.add(id);
     setTransactions(prev => prev.filter(t => t.id !== id));
-    deleteTimers.current[`tx_${id}`] = setTimeout(() => supabase.from('transactions').delete().eq('id', id), 5000);
+    deleteTimers.current[`tx_${id}`] = setTimeout(() => {
+      supabase.from('transactions').delete().eq('id', id);
+      pendingDeletes.current.delete(id);
+    }, 5000);
     undoToast(`"${item.name}" removido`, () => {
       clearTimeout(deleteTimers.current[`tx_${id}`]);
+      pendingDeletes.current.delete(id);
       setTransactions(prev => [item, ...prev]);
     });
   };
