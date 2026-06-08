@@ -55,8 +55,6 @@ interface Task {
 export default function GoalsPage() {
   const [mounted, setMounted] = useState(false);
   const { undoToast } = useToast();
-  const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
-  const pendingDeletes = useRef<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -79,8 +77,8 @@ export default function GoalsPage() {
       supabase.from("milestones").select("*").order("created_at", { ascending: true }),
       supabase.from("tasks").select("id,title,is_done,goal_id").order("created_at", { ascending: true }),
     ]);
-    if (goalsData) setGoals(goalsData.filter(g => !pendingDeletes.current.has(g.id)));
-    if (msData) setMilestones(msData.filter(m => !pendingDeletes.current.has(m.goal_id)));
+    if (goalsData) setGoals(goalsData);
+    if (msData) setMilestones(msData);
     if (tasksData) setTasks(tasksData as Task[]);
   }, []);
 
@@ -130,19 +128,15 @@ export default function GoalsPage() {
     const goal = goals.find(g => g.id === id);
     const goalMilestones = milestones.filter(m => m.goal_id === id);
     if (!goal) return;
-    pendingDeletes.current.add(id);
     setGoals(prev => prev.filter(g => g.id !== id));
     setMilestones(prev => prev.filter(m => m.goal_id !== id));
-    deleteTimers.current[`goal_${id}`] = setTimeout(async () => {
-      await supabase.from("milestones").delete().eq("goal_id", id);
-      await supabase.from("goals").delete().eq("id", id);
-      pendingDeletes.current.delete(id);
-    }, 5000);
+    supabase.from("milestones").delete().eq("goal_id", id);
+    supabase.from("goals").delete().eq("id", id);
     undoToast(`Meta "${goal.title}" removida`, () => {
-      clearTimeout(deleteTimers.current[`goal_${id}`]);
-      pendingDeletes.current.delete(id);
       setGoals(prev => [goal, ...prev]);
       setMilestones(prev => [...prev, ...goalMilestones]);
+      supabase.from("goals").insert([goal]);
+      if (goalMilestones.length > 0) supabase.from("milestones").insert(goalMilestones);
     });
   };
 

@@ -33,8 +33,6 @@ interface Budget {
 export default function FinancePage() {
   const [mounted, setMounted] = useState(false);
   const { undoToast } = useToast();
-  const deleteTimers = useRef<Record<string, NodeJS.Timeout>>({});
-  const pendingDeletes = useRef<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -64,7 +62,7 @@ export default function FinancePage() {
       supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
       supabase.from("budgets").select("*").order("created_at", { ascending: true }),
     ]);
-    if (txRes.data)  setTransactions((txRes.data as Transaction[]).filter(t => !pendingDeletes.current.has(t.id)));
+    if (txRes.data)  setTransactions(txRes.data as Transaction[]);
     if (budRes.data) setBudgets(budRes.data as Budget[]);
   }, []);
 
@@ -243,16 +241,11 @@ export default function FinancePage() {
   const deleteTx = (id: string) => {
     const item = transactions.find(t => t.id === id);
     if (!item) return;
-    pendingDeletes.current.add(id);
     setTransactions(prev => prev.filter(t => t.id !== id));
-    deleteTimers.current[id] = setTimeout(() => {
-      supabase.from("transactions").delete().eq("id", id);
-      pendingDeletes.current.delete(id);
-    }, 5000);
+    supabase.from("transactions").delete().eq("id", id);
     undoToast(`"${item.name}" removido`, () => {
-      clearTimeout(deleteTimers.current[id]);
-      pendingDeletes.current.delete(id);
       setTransactions(prev => [item, ...prev]);
+      supabase.from("transactions").insert([item]);
     });
   };
 
