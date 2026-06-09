@@ -72,12 +72,29 @@ export async function POST(req: NextRequest) {
   // Tenta obter userId via metadata (caso o billing tenha sido criado com metadata)
   let userId = (data?.metadata as Record<string, string> | undefined)?.userId;
 
-  // Fallback: busca pelo customerId no banco
+  // Fallback 1: busca pelo customerId no banco
   if (!userId) {
     const customerId = extractCustomerId(data);
     if (customerId) {
       userId = await findUserByCustomerId(customerId);
       console.log(`[Webhook] customerId=${customerId} → userId=${userId}`);
+    }
+  }
+
+  // Fallback 2: busca pelo email do cliente via Supabase Auth
+  if (!userId) {
+    const customerEmail =
+      (data.customer as Record<string, unknown> | undefined)?.email as string | undefined ??
+      data.customerEmail as string | undefined ??
+      data.email as string | undefined;
+
+    if (customerEmail) {
+      const { data: authUser } = await supabaseAdmin.auth.admin.listUsers();
+      const match = authUser?.users?.find(u => u.email === customerEmail);
+      if (match) {
+        userId = match.id;
+        console.log(`[Webhook] email=${customerEmail} → userId=${userId}`);
+      }
     }
   }
 
