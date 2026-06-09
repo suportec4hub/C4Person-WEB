@@ -138,7 +138,15 @@ export default function Dashboard() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, phase: "" });
-  const [result, setResult] = useState<{ transcription: string; summary: string; actionItems: string[] } | null>(null);
+  const [result, setResult] = useState<{
+    transcription: string;
+    summary: string;
+    actionItems: string[];
+    tags?: string[];
+    meetingType?: string;
+    attendees?: string[];
+    audio_url?: string;
+  } | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [selectedActions, setSelectedActions] = useState<string[]>([]);
   const [importSuccess, setImportSuccess] = useState(false);
@@ -146,6 +154,7 @@ export default function Dashboard() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const initChunkRef = useRef<Blob | null>(null);   // primeiro chunk — contém o cabeçalho WebM
+  const rawDataChunksRef = useRef<Blob[]>([]);      // dados brutos para montar o áudio completo
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Estados do Chat IA
@@ -439,6 +448,7 @@ export default function Dashboard() {
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      rawDataChunksRef.current = [];
       initChunkRef.current = null;
       setRecordingTime(0);
 
@@ -449,6 +459,8 @@ export default function Dashboard() {
           initChunkRef.current = event.data;
           audioChunksRef.current.push(event.data);
         } else {
+          // Rastreia dado bruto para montar o áudio completo (replay)
+          rawDataChunksRef.current.push(event.data);
           // Chunks subsequentes: reúne init + dados para formar um WebM completo e válido
           const segment = new Blob([initChunkRef.current, event.data], { type: "audio/webm" });
           audioChunksRef.current.push(segment);
@@ -476,6 +488,72 @@ export default function Dashboard() {
     }
   };
 
+  /** Monta o blob de áudio completo para replay a partir dos chunks gravados */
+  const buildFullAudio = (): Blob | null => {
+    if (!initChunkRef.current) return null;
+    if (rawDataChunksRef.current.length === 0) {
+      // Gravação curta: initChunk contém tudo (header + áudio)
+      return new Blob([initChunkRef.current], { type: "audio/webm" });
+    }
+    return new Blob([initChunkRef.current, ...rawDataChunksRef.current], { type: "audio/webm" });
+  };
+
+  /** Salva nota no Supabase e faz upload do áudio para Storage */
+  const saveNote = async (
+    uid: string,
+    noteData: {
+      transcription: string;
+      summary: string;
+      actionItems: string[];
+      tags?: string[];
+      meetingType?: string;
+      attendees?: string[];
+    }
+  ) => {
+    const noteId = crypto.randomUUID();
+    const title = `Reunião ${format(new Date(), "dd/MM 'às' HH:mm")}`;
+
+    const { error: noteErr } = await supabase.from("notes").insert([{
+      id: noteId,
+      title,
+      transcription: noteData.transcription,
+      summary: noteData.summary,
+      action_items: noteData.actionItems,
+      tags: noteData.tags ?? [],
+      meeting_type: noteData.meetingType ?? "Outro",
+      duration_seconds: recordingTime,
+      user_id: uid,
+    }]);
+
+    if (noteErr) {
+      console.error("[notes] insert failed:", noteErr.message);
+      return null;
+    }
+
+    // Upload do áudio completo para Supabase Storage (best-effort)
+    let audioUrl: string | undefined;
+    const fullAudio = buildFullAudio();
+    if (fullAudio && fullAudio.size > 0) {
+      const path = `${uid}/${noteId}.webm`;
+      const { error: uploadErr } = await supabase.storage
+        .from("meeting-recordings")
+        .upload(path, fullAudio, { contentType: "audio/webm", upsert: true });
+
+      if (!uploadErr) {
+        const { data: { publicUrl } } = supabase.storage
+          .from("meeting-recordings")
+          .getPublicUrl(path);
+        audioUrl = publicUrl;
+        await supabase.from("notes").update({ audio_url: audioUrl }).eq("id", noteId);
+      } else {
+        console.warn("[audio upload] falhou (bucket não criado?):", uploadErr.message);
+      }
+    }
+
+    toast({ message: "Reunião salva em Notas!", type: "success" });
+    return { noteId, audioUrl };
+  };
+
   const processSegments = async (segments: Blob[]) => {
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: segments.length, phase: "transcribe" });
@@ -497,19 +575,9 @@ export default function Dashboard() {
           const res = await fetch("/api/process-audio", { method: "POST", body: fd });
           if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Erro ao processar."); }
           const data = await res.json();
-          setResult(data);
+          const saved = await saveNote(uid, data);
+          setResult({ ...data, audio_url: saved?.audioUrl });
           setSelectedActions(data.actionItems ?? []);
-          const { error: noteErr } = await supabase.from("notes").insert([{
-            title: `Reunião ${format(new Date(), "dd/MM 'às' HH:mm")}`,
-            transcription: data.transcription,
-            summary: data.summary,
-            user_id: uid,
-          }]);
-          if (noteErr) {
-            console.error("[notes] insert failed:", noteErr.message);
-          } else {
-            toast({ message: "Reunião salva em Notas!", type: "success" });
-          }
           return;
         }
 
@@ -532,20 +600,9 @@ export default function Dashboard() {
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Erro ao gerar resumo."); }
       const sumData = await res.json();
 
-      setResult({ transcription: fullTranscript, summary: sumData.summary, actionItems: sumData.actionItems });
+      const saved = await saveNote(uid, { transcription: fullTranscript, ...sumData });
+      setResult({ transcription: fullTranscript, ...sumData, audio_url: saved?.audioUrl });
       setSelectedActions(sumData.actionItems ?? []);
-
-      const { error: noteErr } = await supabase.from("notes").insert([{
-        title: `Reunião ${format(new Date(), "dd/MM 'às' HH:mm")}`,
-        transcription: fullTranscript,
-        summary: sumData.summary,
-        user_id: uid,
-      }]);
-      if (noteErr) {
-        console.error("[notes] insert failed:", noteErr.message);
-      } else {
-        toast({ message: "Reunião salva em Notas!", type: "success" });
-      }
 
     } catch (error) {
       console.error(error);

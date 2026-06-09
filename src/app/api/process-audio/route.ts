@@ -23,7 +23,7 @@ async function generateSummary(transcript: string) {
         role: "system",
         content: `Você é um assistente executivo especialista em análise de reuniões de negócios. Sua tarefa é analisar a transcrição completa e produzir um relatório COMPLETO, DETALHADO e ESTRUTURADO.
 
-Retorne um JSON com exatamente duas chaves:
+Retorne um JSON com exatamente cinco chaves:
 
 "summary": string em Markdown com TODAS as seções abaixo (use os emojis nos títulos):
 
@@ -49,7 +49,14 @@ Observações estratégicas, tendências ou padrões identificados na discussão
 - Uma frase direta no infinitivo
 - Incluir o responsável quando mencionado: "Enviar proposta para o cliente (João)"
 - Incluir prazo quando mencionado: "Revisar contrato até sexta-feira"
+- Incluir prioridade entre colchetes quando detectável: "Enviar proposta até sexta [URGENTE]"
 - Ser específico e acionável
+
+"tags": array de 3 a 7 strings curtas em Português do Brasil com as palavras-chave do tema da reunião. Exemplos: ["vendas", "cliente", "proposta"]. Preencha mesmo para reuniões curtas.
+
+"meetingType": string com o tipo de reunião detectado automaticamente. Deve ser exatamente um dos valores: "Comercial", "Interna", "1:1", "Planejamento", "Retrospectiva", "Técnica", "Outro". Preencha mesmo para reuniões curtas.
+
+"attendees": array de strings com os nomes de pessoas mencionadas na transcrição. Inclua apenas nomes próprios de participantes ou pessoas citadas. Retorne array vazio se nenhum nome for identificado. Preencha mesmo para reuniões curtas.
 
 IMPORTANTE: Seja PROPORCIONAL ao conteúdo. Reuniões longas exigem resumos longos e detalhados. Não resuma demais — capture TODOS os pontos importantes.
 Responda SEMPRE em Português do Brasil.`,
@@ -66,9 +73,18 @@ Responda SEMPRE em Português do Brasil.`,
     return {
       summary: parsed.summary || "",
       actionItems: Array.isArray(parsed.actionItems) ? parsed.actionItems : [],
+      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+      meetingType: parsed.meetingType || "Outro",
+      attendees: Array.isArray(parsed.attendees) ? parsed.attendees : [],
     };
   } catch {
-    return { summary: completion.choices[0].message.content || "", actionItems: [] };
+    return {
+      summary: completion.choices[0].message.content || "",
+      actionItems: [],
+      tags: [],
+      meetingType: "Outro",
+      attendees: [],
+    };
   }
 }
 
@@ -90,8 +106,8 @@ export async function POST(req: NextRequest) {
       if (!transcript?.trim()) {
         return NextResponse.json({ error: "Transcrição não fornecida." }, { status: 400 });
       }
-      const { summary, actionItems } = await generateSummary(transcript);
-      return NextResponse.json({ summary, actionItems });
+      const { summary, actionItems, tags, meetingType, attendees } = await generateSummary(transcript);
+      return NextResponse.json({ summary, actionItems, tags, meetingType, attendees });
     }
 
     // ── Modo: transcrever áudio (+ opcionalmente gerar resumo) ──
@@ -121,8 +137,8 @@ export async function POST(req: NextRequest) {
     }
 
     // mode=full (padrão) → transcreve + gera resumo numa chamada só
-    const { summary, actionItems } = await generateSummary(transcriptText);
-    return NextResponse.json({ transcription: transcriptText, summary, actionItems });
+    const { summary, actionItems, tags, meetingType, attendees } = await generateSummary(transcriptText);
+    return NextResponse.json({ transcription: transcriptText, summary, actionItems, tags, meetingType, attendees });
 
   } catch (error: unknown) {
     console.error("Erro no Groq:", error);
