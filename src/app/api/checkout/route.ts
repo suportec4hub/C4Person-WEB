@@ -4,7 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 const API = "https://api.abacatepay.com/v1";
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://c4person.com.br";
+
+// URL do link de pagamento criado no dashboard do AbacatePay
+const CHECKOUT_URL = "https://app.abacatepay.com/pay/bill_S54ZPCfzmMqTHjCJuqRuTZ2m";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,12 +44,9 @@ async function ensureCustomer(email: string, name?: string): Promise<string> {
   const list = await abacate("/customers/list");
   const customers = Array.isArray(list.data) ? list.data : [];
   const found = customers.find((c: unknown) => {
-    const customer = c as { email?: string; id?: string };
-    return customer.email === email;
+    return (c as { email?: string }).email === email;
   });
-  if (found) {
-    return (found as { id: string }).id;
-  }
+  if (found) return (found as { id: string }).id;
 
   const created = await abacate("/customers/create", { email, name });
   const createdData = created.data as { id?: string } | null;
@@ -67,12 +66,17 @@ export async function POST(req: NextRequest) {
       {
         cookies: {
           getAll: () => cookieStore.getAll(),
-          setAll: (list) => list.forEach(({ name, value, options }) => cookieStore.set(name, value, options)),
+          setAll: (list) =>
+            list.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            ),
         },
       }
     );
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
     const { data: profile } = await supabaseAdmin
@@ -81,9 +85,14 @@ export async function POST(req: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    const customerId = await ensureCustomer(user.email!, profile?.full_name ?? undefined);
+    // Garante que o cliente existe no AbacatePay e obtém o ID
+    // Isso permite que o webhook encontre o usuário pelo customerId
+    const customerId = await ensureCustomer(
+      user.email!,
+      profile?.full_name ?? undefined
+    );
 
-    // Store customer_id → user_id mapping for webhook fallback lookup
+    // Persiste o mapeamento customerId ↔ userId para o webhook usar como fallback
     const { data: existingSub } = await supabaseAdmin
       .from("subscriptions")
       .select("status")
@@ -93,7 +102,10 @@ export async function POST(req: NextRequest) {
     if (existingSub) {
       await supabaseAdmin
         .from("subscriptions")
-        .update({ abacatepay_customer_id: customerId, updated_at: new Date().toISOString() })
+        .update({
+          abacatepay_customer_id: customerId,
+          updated_at: new Date().toISOString(),
+        })
         .eq("user_id", user.id);
     } else {
       await supabaseAdmin.from("subscriptions").insert({
@@ -105,36 +117,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Create a billing for this customer (dynamic — not tied to a static ID)
-    const billing = await abacate("/billing", {
-      frequency: "MONTHLY",
-      methods: ["PIX"],
-      products: [
-        {
-          externalId: "c4person-pro",
-          name: "C4Person Pro",
-          quantity: 1,
-          price: 1590, // R$15,90 in cents
-        },
-      ],
-      customer: { id: customerId },
-      returnUrl: `${BASE_URL}/C4Person`,
-      completionUrl: `${BASE_URL}/C4Person`,
-      metadata: { userId: user.id },
-    });
+    console.log(`[Checkout] Usuário ${user.id} → customer ${customerId} → redirect para checkout`);
 
-    const billingData = billing.data as { url?: string; id?: string } | null;
-    const url = billingData?.url ?? (billing.url as string | undefined);
-
-    if (!url) {
-      console.error("[AbacatePay] No URL in billing response:", JSON.stringify(billing));
-      return NextResponse.json(
-        { error: (billing.error as string) ?? "Erro ao criar cobrança no AbacatePay" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ url });
+    return NextResponse.json({ url: CHECKOUT_URL });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[Checkout] Error:", message);
