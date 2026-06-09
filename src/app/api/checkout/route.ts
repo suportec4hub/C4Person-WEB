@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 const API = "https://api.abacatepay.com/v1";
-const BILLING_ID = "bill_KaUC2TeCLALmSKqTXmZgQUR6";
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://c4person.com.br";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,7 +28,7 @@ async function abacate(path: string, body?: object): Promise<AbacateResponse> {
   });
 
   const text = await res.text();
-  console.log(`[AbacatePay] ${body ? "POST" : "GET"} ${path} → ${res.status}: ${text.slice(0, 300)}`);
+  console.log(`[AbacatePay] ${body ? "POST" : "GET"} ${path} → ${res.status}: ${text.slice(0, 400)}`);
 
   try {
     return JSON.parse(text) as AbacateResponse;
@@ -46,8 +46,7 @@ async function ensureCustomer(email: string, name?: string): Promise<string> {
     return customer.email === email;
   });
   if (found) {
-    const customer = found as { id: string };
-    return customer.id;
+    return (found as { id: string }).id;
   }
 
   const created = await abacate("/customers/create", { email, name });
@@ -106,15 +105,31 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Fetch billing link URL — try data.url first, then top-level url
-    const billing = await abacate(`/billing/${BILLING_ID}`);
-    const billingData = billing.data as { url?: string } | null;
+    // Create a billing for this customer (dynamic — not tied to a static ID)
+    const billing = await abacate("/billing", {
+      frequency: "MONTHLY",
+      methods: ["PIX"],
+      products: [
+        {
+          externalId: "c4person-pro",
+          name: "C4Person Pro",
+          quantity: 1,
+          price: 1590, // R$15,90 in cents
+        },
+      ],
+      customer: { id: customerId },
+      returnUrl: `${BASE_URL}/C4Person`,
+      completionUrl: `${BASE_URL}/C4Person`,
+      metadata: { userId: user.id },
+    });
+
+    const billingData = billing.data as { url?: string; id?: string } | null;
     const url = billingData?.url ?? (billing.url as string | undefined);
 
     if (!url) {
-      console.error("[AbacatePay] No URL in billing response:", billing);
+      console.error("[AbacatePay] No URL in billing response:", JSON.stringify(billing));
       return NextResponse.json(
-        { error: (billing.error as string) ?? "Erro ao obter link de pagamento" },
+        { error: (billing.error as string) ?? "Erro ao criar cobrança no AbacatePay" },
         { status: 500 }
       );
     }
