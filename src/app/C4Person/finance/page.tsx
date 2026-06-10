@@ -138,8 +138,12 @@ export default function FinancePage() {
     } catch { /* noop */ }
 
     const channel = supabase.channel("finance-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, fetchData)
-      .on("postgres_changes", { event: "*", schema: "public", table: "budgets" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "transactions" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "transactions" }, (p) => setTransactions(prev => prev.filter(t => t.id !== p.old.id)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "budgets" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "budgets" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "budgets" }, (p) => setBudgets(prev => prev.filter(b => b.id !== p.old.id)))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
@@ -238,11 +242,16 @@ export default function FinancePage() {
     }
   };
 
-  const deleteTx = (id: string) => {
+  const deleteTx = async (id: string) => {
     const item = transactions.find(t => t.id === id);
     if (!item) return;
     setTransactions(prev => prev.filter(t => t.id !== id));
-    supabase.from("transactions").delete().eq("id", id);
+    const { error } = await supabase.from("transactions").delete().eq("id", id);
+    if (error) {
+      console.error('deleteTx failed:', error.message);
+      setTransactions(prev => [item, ...prev]);
+      return;
+    }
     undoToast(`"${item.name}" removido`, () => {
       setTransactions(prev => [item, ...prev]);
       supabase.from("transactions").insert([item]);

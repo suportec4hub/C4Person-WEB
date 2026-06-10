@@ -338,12 +338,17 @@ export default function Dashboard() {
     if (data) setTransactions(prev => prev.map(t => t.id === tempId ? data[0] : t));
   };
 
-  const deleteTask = (id: string) => {
+  const deleteTask = async (id: string) => {
     const idx = tasks.findIndex(t => t.id === id);
     const item = tasks[idx];
     if (!item) return;
     setTasks(prev => prev.filter(t => t.id !== id));
-    supabase.from('tasks').delete().eq('id', id);
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (error) {
+      console.error('deleteTask failed:', error.message);
+      setTasks(prev => { const next = [...prev]; next.splice(Math.min(idx, next.length), 0, item); return next; });
+      return;
+    }
     undoToast(`Tarefa "${item.title}" removida`, () => {
       setTasks(prev => {
         const next = [...prev];
@@ -354,22 +359,32 @@ export default function Dashboard() {
     });
   };
 
-  const deleteHabit = (id: string) => {
+  const deleteHabit = async (id: string) => {
     const item = habits.find(h => h.id === id);
     if (!item) return;
     setHabits(prev => prev.filter(h => h.id !== id));
-    supabase.from('habits').delete().eq('id', id);
+    const { error } = await supabase.from('habits').delete().eq('id', id);
+    if (error) {
+      console.error('deleteHabit failed:', error.message);
+      setHabits(prev => [...prev, item]);
+      return;
+    }
     undoToast(`Hábito "${item.name}" removido`, () => {
       setHabits(prev => [...prev, item]);
       supabase.from('habits').insert([item]);
     });
   };
 
-  const deleteTransaction = (id: string) => {
+  const deleteTransaction = async (id: string) => {
     const item = transactions.find(t => t.id === id);
     if (!item) return;
     setTransactions(prev => prev.filter(t => t.id !== id));
-    supabase.from('transactions').delete().eq('id', id);
+    const { error } = await supabase.from('transactions').delete().eq('id', id);
+    if (error) {
+      console.error('deleteTransaction failed:', error.message);
+      setTransactions(prev => [item, ...prev]);
+      return;
+    }
     undoToast(`"${item.name}" removido`, () => {
       setTransactions(prev => [item, ...prev]);
       supabase.from('transactions').insert([item]);
@@ -398,11 +413,17 @@ export default function Dashboard() {
         });
     });
 
-    // Realtime subscriptions
+    // Realtime subscriptions — DELETE usa payload para evitar re-fetch que pode restaurar item
     const channel = supabase.channel("dashboard-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, fetchTasks)
-      .on("postgres_changes", { event: "*", schema: "public", table: "habits" }, fetchHabits)
-      .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, fetchTransactions)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "tasks" }, fetchTasks)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tasks" }, fetchTasks)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "tasks" }, (p) => setTasks(prev => prev.filter(t => t.id !== p.old.id)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "habits" }, fetchHabits)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "habits" }, fetchHabits)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "habits" }, (p) => setHabits(prev => prev.filter(h => h.id !== p.old.id)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, fetchTransactions)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "transactions" }, fetchTransactions)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "transactions" }, (p) => setTransactions(prev => prev.filter(t => t.id !== p.old.id)))
       .subscribe();
 
     // Keyboard shortcuts
