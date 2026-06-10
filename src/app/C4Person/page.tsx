@@ -263,23 +263,33 @@ export default function Dashboard() {
     const newStatus = !currentStatus;
     const newStreak = newStatus ? currentStreak + 1 : Math.max(0, currentStreak - 1);
     const todayIso = new Date().toISOString().slice(0, 10);
-    setHabits(habits.map(h => h.id === id ? { ...h, is_completed_today: newStatus, streak: newStreak } : h));
+
+    // Optimistic UI
+    setHabits(prev => prev.map(h => h.id === id ? { ...h, is_completed_today: newStatus, streak: newStreak } : h));
+    setHabitLogs(prev => ({
+      ...prev,
+      [id]: newStatus
+        ? [...(prev[id] || []).filter(d => d !== todayIso), todayIso]
+        : (prev[id] || []).filter(d => d !== todayIso),
+    }));
+
     if (newStatus) {
-      setHabitLogs(prev => ({
-        ...prev,
-        [id]: [...(prev[id] || []).filter(d => d !== todayIso), todayIso],
-      }));
-      supabase.from("habit_logs").upsert(
+      const { error } = await supabase.from("habit_logs").upsert(
         { habit_id: id, log_date: todayIso, user_id: userId },
         { onConflict: "habit_id,log_date" }
       );
+      if (error) {
+        console.error("habit_logs upsert failed:", error.message);
+        // Rollback
+        setHabits(prev => prev.map(h => h.id === id ? { ...h, is_completed_today: currentStatus, streak: currentStreak } : h));
+        setHabitLogs(prev => ({ ...prev, [id]: (prev[id] || []).filter(d => d !== todayIso) }));
+        return;
+      }
     } else {
-      setHabitLogs(prev => ({
-        ...prev,
-        [id]: (prev[id] || []).filter(d => d !== todayIso),
-      }));
-      supabase.from("habit_logs").delete().eq("habit_id", id).eq("log_date", todayIso);
+      const { error } = await supabase.from("habit_logs").delete().eq("habit_id", id).eq("log_date", todayIso);
+      if (error) console.error("habit_logs delete failed:", error.message);
     }
+
     await supabase.from("habits").update({
       is_completed_today: newStatus,
       streak: newStreak,
