@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Timer, Play, Pause, RotateCcw, X, Brain, Coffee } from "lucide-react";
+import { Timer, Play, Pause, RotateCcw, X, Coffee, Focus, Info } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const MODES = {
@@ -13,12 +13,14 @@ const MODES = {
 type Mode = keyof typeof MODES;
 
 export function PomodoroTimer() {
-  const [open, setOpen]           = useState(false);
-  const [mode, setMode]           = useState<Mode>("focus");
-  const [timeLeft, setTimeLeft]   = useState(MODES.focus.minutes * 60);
-  const [isRunning, setIsRunning] = useState(false);
-  const [sessions, setSessions]   = useState(0);
-  const [finished, setFinished]   = useState(false);
+  const [open, setOpen]               = useState(false);
+  const [mode, setMode]               = useState<Mode>("focus");
+  const [timeLeft, setTimeLeft]       = useState(MODES.focus.minutes * 60);
+  const [isRunning, setIsRunning]     = useState(false);
+  const [sessions, setSessions]       = useState(0);
+  const [finished, setFinished]       = useState(false);
+  const [showFocusInfo, setShowFocusInfo] = useState(false);
+  const [notifPerm, setNotifPerm]     = useState<NotificationPermission>("default");
 
   const totalSeconds  = MODES[mode].minutes * 60;
   const progress      = (timeLeft / totalSeconds) * 100;
@@ -28,7 +30,37 @@ export function PomodoroTimer() {
   const dashOffset    = circumference - (progress / 100) * circumference;
   const cur           = MODES[mode];
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioCtxRef  = useRef<AudioContext | null>(null);
+  const wakeLockRef  = useRef<WakeLockSentinel | null>(null);
+
+  // Lê permissão de notificações ao montar
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window)
+      setNotifPerm(Notification.permission);
+  }, []);
+
+  const acquireWakeLock = useCallback(async () => {
+    try {
+      if ("wakeLock" in navigator && !wakeLockRef.current)
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+    } catch { /* não suportado */ }
+  }, []);
+
+  const releaseWakeLock = useCallback(async () => {
+    if (wakeLockRef.current) {
+      await wakeLockRef.current.release().catch(() => {});
+      wakeLockRef.current = null;
+    }
+  }, []);
+
+  // Re-adquire wake lock se a aba voltar ao foco (visibilidade)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && isRunning) acquireWakeLock();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [isRunning, acquireWakeLock]);
 
   const playBeep = useCallback(() => {
     try {
@@ -59,18 +91,23 @@ export function PomodoroTimer() {
     return () => clearInterval(id);
   }, [isRunning]);
 
+  const sendNotification = useCallback((title: string, body: string) => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted")
+      new Notification(title, { body, icon: "/icon-192.png" });
+  }, []);
+
   // Completion trigger
   useEffect(() => {
     if (timeLeft !== 0 || !isRunning) return;
     setIsRunning(false);
     setFinished(true);
+    releaseWakeLock();
     playBeep();
     if (mode === "focus") setSessions(s => s + 1);
-    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-      new Notification("C4 Person · Pomodoro", {
-        body: mode === "focus" ? "Sessão concluída! Hora de descansar." : "Pausa encerrada! Bora focar.",
-      });
-    }
+    sendNotification(
+      "C4 Person · Pomodoro",
+      mode === "focus" ? "🎉 Sessão concluída! Hora de descansar." : "✅ Pausa encerrada! Bora focar."
+    );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeLeft]);
 
@@ -79,12 +116,14 @@ export function PomodoroTimer() {
     setTimeLeft(MODES[m].minutes * 60);
     setIsRunning(false);
     setFinished(false);
+    releaseWakeLock();
   };
 
   const reset = () => {
     setTimeLeft(MODES[mode].minutes * 60);
     setIsRunning(false);
     setFinished(false);
+    releaseWakeLock();
   };
 
   const startNext = () => {
@@ -96,9 +135,21 @@ export function PomodoroTimer() {
     }
   };
 
-  const requestNotifications = () => {
+  const handlePlayPause = async () => {
+    const starting = !isRunning;
+    setIsRunning(starting);
+    if (starting) {
+      await acquireWakeLock();
+      sendNotification("C4 Person · Modo Foco ativo 🎯", `${MODES[mode].label} de ${MODES[mode].minutes} min iniciado. Silencia seu dispositivo!`);
+    } else {
+      await releaseWakeLock();
+    }
+  };
+
+  const requestNotifications = async () => {
     if (typeof window !== "undefined" && "Notification" in window) {
-      Notification.requestPermission();
+      const perm = await Notification.requestPermission();
+      setNotifPerm(perm);
     }
   };
 
@@ -220,11 +271,11 @@ export function PomodoroTimer() {
                     onClick={startNext}
                     className={`w-14 h-14 rounded-full flex items-center justify-center font-bold shadow-lg transition-all hover:scale-105 ${cur.bg} ${cur.border} border-2 ${cur.color}`}
                   >
-                    {mode === "focus" ? <Coffee size={22} /> : <Brain size={22} />}
+                    {mode === "focus" ? <Coffee size={22} /> : <Focus size={22} />}
                   </button>
                 ) : (
                   <button
-                    onClick={() => setIsRunning(r => !r)}
+                    onClick={handlePlayPause}
                     className={`w-14 h-14 rounded-full flex items-center justify-center font-bold shadow-lg transition-all hover:scale-105 ${cur.bg} ${cur.border} border-2 ${cur.color}`}
                   >
                     {isRunning ? <Pause size={22} /> : <Play size={22} className="ml-0.5" />}
@@ -232,13 +283,54 @@ export function PomodoroTimer() {
                 )}
 
                 <button
-                  onClick={requestNotifications}
-                  title="Ativar notificações"
-                  className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-muted-foreground hover:text-white hover:bg-white/10 transition-all"
+                  onClick={() => setShowFocusInfo(v => !v)}
+                  title="Modo Foco nos dispositivos"
+                  className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all ${
+                    showFocusInfo
+                      ? "bg-primary/20 border-primary/40 text-primary"
+                      : "bg-white/5 border-white/10 text-muted-foreground hover:text-white hover:bg-white/10"
+                  }`}
                 >
-                  <Brain size={15} />
+                  <Info size={15} />
                 </button>
               </div>
+
+              {/* Focus Mode Info Panel */}
+              <AnimatePresence>
+                {showFocusInfo && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden mb-4"
+                  >
+                    <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 text-[11px] text-muted-foreground space-y-2">
+                      <p className="text-white font-semibold text-xs flex items-center gap-1.5">
+                        <Focus size={12} className="text-primary" /> Como ativar o Modo Foco automático
+                      </p>
+                      {notifPerm !== "granted" && (
+                        <button
+                          onClick={requestNotifications}
+                          className="w-full py-1.5 rounded-lg bg-primary/20 border border-primary/30 text-primary text-xs font-medium hover:bg-primary/30 transition-all"
+                        >
+                          🔔 Permitir notificações (obrigatório)
+                        </button>
+                      )}
+                      {notifPerm === "granted" && (
+                        <p className="text-emerald-400">✓ Notificações ativadas</p>
+                      )}
+                      <div className="space-y-1.5 pt-1 border-t border-white/10">
+                        <p className="font-medium text-white/70">📱 iPhone / iPad</p>
+                        <p>Ajustes → Foco → Adicionar Foco → Trabalho → Permitir notificações do Chrome/Safari</p>
+                        <p className="font-medium text-white/70">🤖 Android</p>
+                        <p>Configurações → Modo Foco → Adicionar ao horário OU use o app Rotinas para ativar ao receber notificação do C4Person</p>
+                        <p className="font-medium text-white/70">💻 Windows</p>
+                        <p>Configurações → Sistema → Assistência de Foco → Ativar quando estiver em tela cheia (o Pomodoro bloqueia a tela)</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Session dots */}
               <div className="flex items-center justify-center gap-2">
