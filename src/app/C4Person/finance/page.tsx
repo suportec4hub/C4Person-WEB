@@ -13,7 +13,6 @@ import {
   ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays, Pencil,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
-import XLSXStyle from "xlsx-js-style";
 
 const CUSTOM_CAT_COLORS = ["#f43f5e","#fb923c","#fbbf24","#a3e635","#34d399","#22d3ee","#818cf8","#e879f9","#f472b6","#38bdf8"];
 
@@ -413,7 +412,8 @@ export default function FinancePage() {
     if (w) { w.document.write(html); w.document.close(); }
   };
 
-  const exportSheet = () => {
+  const exportSheet = async () => {
+    const XLSXStyle = (await import("xlsx-js-style")).default;
     const monthLabel = format(viewMonth, "MMMM 'de' yyyy", { locale: ptBR });
     const now = format(new Date(), "dd/MM/yyyy HH:mm");
     const savingsRate = totalIn > 0 ? ((balance / totalIn) * 100).toFixed(1) : "0.0";
@@ -471,8 +471,6 @@ export default function FinancePage() {
     const wsResumo = XLSXStyle.utils.aoa_to_sheet(resumoRows);
     wsResumo["!cols"] = [{ wch: 24 }, { wch: 24 }, { wch: 24 }, { wch: 24 }];
     wsResumo["!rows"] = [{ hpt: 22 }, { hpt: 14 }, { hpt: 6 }, { hpt: 18 }, { hpt: 32 }, { hpt: 16 }];
-    XLSXStyle.utils.book_append_sheet(XLSXStyle.utils.book_new(), wsResumo, "Resumo");
-
     const wb = XLSXStyle.utils.book_new();
     XLSXStyle.utils.book_append_sheet(wb, wsResumo, "Resumo");
 
