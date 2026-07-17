@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
   TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target, Download,
-  ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays,
+  ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays, Pencil,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
@@ -59,6 +59,7 @@ export default function FinancePage() {
   const [budgetLimit, setBudgetLimit]             = useState("");
 
   const [showModal, setShowModal] = useState(false);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newType, setNewType] = useState<"in" | "out">("out");
@@ -320,24 +321,54 @@ export default function FinancePage() {
   }, [fetchData, fetchProfile]);
 
   /* ── handlers ── */
+  const resetModal = () => {
+    setShowModal(false);
+    setEditingTx(null);
+    setNewName(""); setNewAmount(""); setNewType("out"); setNewCategory("Outros");
+    setNewRecurrence("none"); setNewPaymentSources(["Bolso (Salário)"]);
+  };
+
+  const openEdit = (tx: Transaction) => {
+    setEditingTx(tx);
+    setNewName(tx.name);
+    setNewAmount(String(tx.amount));
+    setNewType(tx.type);
+    setNewCategory(tx.category || "Outros");
+    setNewRecurrence(tx.recurrence || "none");
+    setNewPaymentSources(tx.payment_source && tx.payment_source.length > 0 ? tx.payment_source : ["Bolso (Salário)"]);
+    setShowModal(true);
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(newAmount.replace(",", "."));
     if (!newName.trim() || isNaN(amount)) return;
 
-    const payload = {
+    const fields = {
       name: newName,
       amount,
       type: newType,
       category: newCategory,
       recurrence: newRecurrence,
-      transaction_date: new Date().toISOString(),
-      user_id: userId,
       payment_source: newType === "out" && newPaymentSources.length > 0 ? newPaymentSources : null,
     };
 
-    setShowModal(false);
-    setNewName(""); setNewAmount(""); setNewType("out"); setNewCategory("Outros"); setNewRecurrence("none"); setNewPaymentSources(["Bolso (Salário)"]);
+    if (editingTx) {
+      // UPDATE
+      const original = editingTx;
+      resetModal();
+      setTransactions(prev => prev.map(t => t.id === original.id ? { ...t, ...fields } : t));
+      const { error } = await supabase.from("transactions").update(fields).eq("id", original.id);
+      if (error) {
+        console.error("updateTx failed:", error.message);
+        setTransactions(prev => prev.map(t => t.id === original.id ? original : t));
+      }
+      return;
+    }
+
+    // INSERT
+    const payload = { ...fields, transaction_date: new Date().toISOString(), user_id: userId };
+    resetModal();
 
     const { data, error } = await supabase.from("transactions").insert([payload]).select();
     if (data) {
@@ -1059,12 +1090,22 @@ export default function FinancePage() {
                 <span className={`text-sm font-bold flex-shrink-0 ${t.type === "in" ? "text-emerald-400" : "text-red-400"}`}>
                   {t.type === "in" ? "+" : "−"}{fmt(Number(t.amount))}
                 </span>
-                <button
-                  onClick={() => deleteTx(t.id)}
-                  className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 flex-shrink-0"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-all flex-shrink-0">
+                  <button
+                    onClick={() => openEdit(t)}
+                    className="text-muted-foreground hover:text-primary transition-colors p-1"
+                    title="Editar"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button
+                    onClick={() => deleteTx(t.id)}
+                    className="text-muted-foreground hover:text-red-400 transition-colors p-1"
+                    title="Excluir"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1311,14 +1352,14 @@ export default function FinancePage() {
               className="bg-card border border-white/10 p-8 rounded-3xl w-full max-w-md shadow-2xl relative"
             >
               <button
-                onClick={() => setShowModal(false)}
+                onClick={resetModal}
                 className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors"
               >
                 <X size={24} />
               </button>
               <h2 className="text-2xl font-bold mb-6 text-white flex items-center gap-2">
                 <Wallet size={22} className="text-emerald-400" />
-                Nova Transação
+                {editingTx ? "Editar Transação" : "Nova Transação"}
               </h2>
 
               <form onSubmit={handleAdd} className="flex flex-col gap-5">
@@ -1467,7 +1508,7 @@ export default function FinancePage() {
                     newType === "in" ? "bg-emerald-500 hover:bg-emerald-500/90" : "bg-red-500 hover:bg-red-500/90"
                   }`}
                 >
-                  Adicionar
+                  {editingTx ? "Salvar alterações" : "Adicionar"}
                 </button>
               </form>
             </motion.div>
