@@ -412,72 +412,213 @@ export default function FinancePage() {
     if (w) { w.document.write(html); w.document.close(); }
   };
 
-  const exportCSV = () => {
+  const exportSheet = () => {
     const monthLabel = format(viewMonth, "MMMM 'de' yyyy", { locale: ptBR });
-    const now = format(new Date(), "dd/MM/yyyy HH:mm");
-
-    const lines: string[] = [];
-
-    // Cabeçalho do relatório
-    lines.push(`"RELATÓRIO FINANCEIRO - C4Person"`);
-    lines.push(`"Período:","${monthLabel}"`);
-    lines.push(`"Exportado em:","${now}"`);
-    lines.push("");
-
-    // Resumo
-    lines.push(`"=== RESUMO ==="`);
-    lines.push(`"Total Receitas","${fmt(totalIn)}"`);
-    lines.push(`"Total Despesas","${fmt(totalOut)}"`);
-    lines.push(`"Saldo","${fmt(balance)}"`);
+    const now = format(new Date(), "dd/MM/yyyy 'às' HH:mm");
     const savingsRate = totalIn > 0 ? ((balance / totalIn) * 100).toFixed(1) : "0.0";
-    lines.push(`"Taxa de Poupança","${savingsRate}%"`);
-    lines.push("");
+    const filename = `financas_${format(viewMonth, "yyyy-MM")}`;
 
-    // Categorias
-    if (categoryData.length > 0) {
-      lines.push(`"=== DESPESAS POR CATEGORIA ==="`);
-      lines.push(`"Categoria","Valor","% do Total"`);
-      categoryData.forEach(c => {
-        const pct = totalOut > 0 ? ((c.value / totalOut) * 100).toFixed(1) : "0";
-        lines.push(`"${c.label}","${fmt(c.value)}","${pct}%"`);
-      });
-      lines.push("");
-    }
+    const catRows = categoryData.map((c, i) => {
+      const pct = totalOut > 0 ? ((c.value / totalOut) * 100).toFixed(1) : "0";
+      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+      return `<tr style="background:${bg}">
+        <td style="padding:10px 16px">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c.color};margin-right:8px;vertical-align:middle"></span>
+          <span style="font-weight:500">${c.label}</span>
+        </td>
+        <td style="padding:10px 16px;text-align:right;font-weight:700;color:#ef4444">${fmt(c.value)}</td>
+        <td style="padding:10px 16px;text-align:right;color:#64748b">${pct}%</td>
+        <td style="padding:10px 24px 10px 8px">
+          <div style="background:#e2e8f0;border-radius:99px;height:7px;width:120px;overflow:hidden">
+            <div style="background:${c.color};height:100%;width:${pct}%;border-radius:99px"></div>
+          </div>
+        </td>
+      </tr>`;
+    }).join("");
 
-    // Carteiras
-    if (walletBalances.length > 0) {
-      lines.push(`"=== SALDO POR CARTEIRA ==="`);
-      lines.push(`"Carteira","Recebido","Gasto","Saldo"`);
-      walletBalances.forEach(w => {
-        lines.push(`"${w.label}","${fmt(w.received)}","${fmt(w.spent)}","${fmt(w.balance)}"`);
-      });
-      lines.push("");
-    }
+    const walletRows = walletBalances.map((w, i) => {
+      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+      return `<tr style="background:${bg}">
+        <td style="padding:10px 16px">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${w.color};margin-right:8px;vertical-align:middle"></span>
+          <span style="font-weight:500">${w.label}</span>
+        </td>
+        <td style="padding:10px 16px;text-align:right;color:#10b981;font-weight:600">${fmt(w.received)}</td>
+        <td style="padding:10px 16px;text-align:right;color:#ef4444;font-weight:600">${fmt(w.spent)}</td>
+        <td style="padding:10px 16px;text-align:right;font-weight:800;font-size:14px;color:${w.balance >= 0 ? "#10b981" : "#ef4444"}">${fmt(w.balance)}</td>
+      </tr>`;
+    }).join("");
 
-    // Lançamentos
-    lines.push(`"=== LANÇAMENTOS ==="`);
-    lines.push(`"Data","Descrição","Tipo","Categoria","Fontes de Pagamento","Valor"`);
-    filteredTx.forEach(t => {
-      const date = t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : "";
-      const type = t.type === "in" ? "Receita" : "Despesa";
-      const sources = Array.isArray(t.payment_source) ? t.payment_source.join(" + ") : "";
-      const signal = t.type === "in" ? "+" : "-";
-      lines.push(
-        `"${date}",` +
-        `"${t.name.replace(/"/g, '""')}",` +
-        `"${type}",` +
-        `"${t.category || "Outros"}",` +
-        `"${sources}",` +
-        `"${signal}${Number(t.amount).toFixed(2).replace(".", ",")}"`
-      );
-    });
+    const txRows = filteredTx.map((t, i) => {
+      const isIn = t.type === "in";
+      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+      const sources = Array.isArray(t.payment_source) && t.payment_source.length > 0
+        ? t.payment_source.join(" + ")
+        : "—";
+      return `<tr style="background:${bg}">
+        <td style="padding:9px 16px;color:#64748b;white-space:nowrap">${t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : "—"}</td>
+        <td style="padding:9px 16px;font-weight:500">${t.name}</td>
+        <td style="padding:9px 16px">
+          <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.3px;background:${isIn ? "#dcfce7" : "#fee2e2"};color:${isIn ? "#16a34a" : "#dc2626"}">
+            ${isIn ? "RECEITA" : "DESPESA"}
+          </span>
+        </td>
+        <td style="padding:9px 16px;color:#64748b">${t.category || "Outros"}</td>
+        <td style="padding:9px 16px;color:#94a3b8;font-size:11px">${sources}</td>
+        <td style="padding:9px 16px;text-align:right;font-weight:700;font-size:13px;color:${isIn ? "#10b981" : "#ef4444"}">${isIn ? "+" : "−"}${fmt(Number(t.amount))}</td>
+      </tr>`;
+    }).join("");
 
-    const csv = "﻿" + lines.join("\n"); // BOM para Excel abrir UTF-8 corretamente
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>C4Person · ${monthLabel}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f1f5f9;color:#1e293b;min-height:100vh;padding:32px 16px}
+  .wrap{max-width:960px;margin:0 auto}
+
+  .hero{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#1e293b 100%);border-radius:20px;padding:36px 40px;color:#fff;margin-bottom:28px;position:relative;overflow:hidden}
+  .hero::before{content:"";position:absolute;top:-60px;right:-60px;width:200px;height:200px;border-radius:50%;background:rgba(59,130,246,.15)}
+  .hero::after{content:"";position:absolute;bottom:-40px;left:30%;width:140px;height:140px;border-radius:50%;background:rgba(16,185,129,.1)}
+  .hero-inner{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:flex-end}
+  .hero h1{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin-bottom:6px}
+  .hero .app{font-size:26px;font-weight:800;letter-spacing:-1px}
+  .hero .app span{color:#3b82f6}
+  .hero-right{text-align:right}
+  .hero-right .month{font-size:32px;font-weight:900;letter-spacing:-1.5px;text-transform:capitalize;line-height:1}
+  .hero-right .meta{color:#94a3b8;font-size:11px;margin-top:6px}
+
+  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+  .kpi{background:#fff;border-radius:14px;padding:20px;border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(0,0,0,.05);position:relative;overflow:hidden}
+  .kpi::after{content:"";position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0;background:var(--accent,#e2e8f0)}
+  .kpi.g{--accent:#10b981} .kpi.r{--accent:#ef4444} .kpi.b{--accent:#3b82f6} .kpi.v{--accent:#8b5cf6}
+  .kpi-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8;margin-bottom:10px}
+  .kpi-val{font-size:22px;font-weight:900;letter-spacing:-0.5px;line-height:1}
+  .kpi.g .kpi-val{color:#10b981} .kpi.r .kpi-val{color:#ef4444} .kpi.b .kpi-val{color:#3b82f6} .kpi.v .kpi-val{color:#8b5cf6}
+  .kpi-sub{font-size:11px;color:#94a3b8;margin-top:6px}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+
+  .card{background:#fff;border-radius:14px;border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(0,0,0,.05);overflow:hidden;margin-bottom:16px}
+  .card-head{padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between}
+  .card-head h2{font-size:13px;font-weight:700;color:#0f172a}
+  .card-head .chip{font-size:10px;font-weight:700;background:#f1f5f9;color:#64748b;padding:3px 10px;border-radius:20px;letter-spacing:.3px}
+
+  table{width:100%;border-collapse:collapse}
+  th{padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;background:#f8fafc;border-bottom:1px solid #f1f5f9}
+  th:last-child{text-align:right;padding-right:20px}
+
+  .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0}
+  .footer strong{color:#64748b}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <div class="hero-inner">
+      <div>
+        <h1>Relatório Financeiro</h1>
+        <div class="app">C4<span>Person</span></div>
+      </div>
+      <div class="hero-right">
+        <div class="month">${monthLabel}</div>
+        <div class="meta">Exportado em ${now}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi g">
+      <div class="kpi-lbl">Receitas</div>
+      <div class="kpi-val">${fmt(totalIn)}</div>
+      <div class="kpi-sub">${filteredTx.filter(t => t.type === "in").length} lançamento(s)</div>
+    </div>
+    <div class="kpi r">
+      <div class="kpi-lbl">Despesas</div>
+      <div class="kpi-val">${fmt(totalOut)}</div>
+      <div class="kpi-sub">${filteredTx.filter(t => t.type === "out").length} lançamento(s)</div>
+    </div>
+    <div class="kpi ${balance >= 0 ? "g" : "r"}">
+      <div class="kpi-lbl">Saldo do Mês</div>
+      <div class="kpi-val">${fmt(balance)}</div>
+      <div class="kpi-sub">${balance >= 0 ? "✓ Positivo" : "✕ Negativo"}</div>
+    </div>
+    <div class="kpi v">
+      <div class="kpi-lbl">Taxa de Poupança</div>
+      <div class="kpi-val">${savingsRate}%</div>
+      <div class="kpi-sub">da receita guardada</div>
+    </div>
+  </div>
+
+  <div class="cols">
+    ${categoryData.length > 0 ? `
+    <div class="card">
+      <div class="card-head">
+        <h2>Despesas por Categoria</h2>
+        <span class="chip">${categoryData.length} categorias</span>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Categoria</th>
+          <th style="text-align:right">Valor</th>
+          <th style="text-align:right;padding-right:20px">%</th>
+          <th></th>
+        </tr></thead>
+        <tbody>${catRows}</tbody>
+      </table>
+    </div>` : ""}
+
+    ${walletBalances.length > 0 ? `
+    <div class="card">
+      <div class="card-head">
+        <h2>Saldo por Carteira</h2>
+        <span class="chip">${walletBalances.length} carteira(s)</span>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Carteira</th>
+          <th style="text-align:right">Recebido</th>
+          <th style="text-align:right">Gasto</th>
+          <th style="text-align:right;padding-right:16px">Saldo</th>
+        </tr></thead>
+        <tbody>${walletRows}</tbody>
+      </table>
+    </div>` : ""}
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Todos os Lançamentos</h2>
+      <span class="chip">${filteredTx.length} itens</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Data</th>
+        <th>Descrição</th>
+        <th>Tipo</th>
+        <th>Categoria</th>
+        <th>Origem</th>
+        <th style="text-align:right;padding-right:20px">Valor</th>
+      </tr></thead>
+      <tbody>${txRows}</tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    Relatório gerado pelo <strong>C4Person</strong> · ${now}
+  </div>
+</div>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `financas_${format(viewMonth, "yyyy-MM")}.csv`;
+    a.download = `${filename}.html`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -808,11 +949,11 @@ export default function FinancePage() {
             <Download size={16} /> PDF
           </button>
           <button
-            onClick={exportCSV}
+            onClick={exportSheet}
             className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
-            title="Exportar CSV"
+            title="Exportar Planilha HTML"
           >
-            <Download size={16} /> CSV
+            <Download size={16} /> Planilha
           </button>
           <motion.button
             onClick={() => setShowModal(true)}
