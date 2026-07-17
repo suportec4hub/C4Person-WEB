@@ -11,6 +11,7 @@ import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
   TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target, Download,
   ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays, Pencil,
+  CreditCard, Sparkles,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
@@ -32,6 +33,17 @@ interface Budget {
   id: string;
   category: string;
   monthly_limit: number;
+}
+
+interface Debt {
+  id: string;
+  user_id: string;
+  name: string;
+  creditor: string | null;
+  total_amount: number;
+  paid_amount: number;
+  status: "active" | "quitada";
+  created_at: string;
 }
 
 interface Profile {
@@ -84,6 +96,7 @@ export default function FinancePage() {
   /* ── profile / salary / partner ── */
   const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null });
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"salary" | "debts" | "partner">("salary");
   const [settingSalaryMode, setSettingSalaryMode] = useState<"full" | "split">("full");
   const [settingSalaryAmount, setSettingSalaryAmount] = useState("");
   const [settingSalaryAmount2, setSettingSalaryAmount2] = useState("");
@@ -91,13 +104,27 @@ export default function FinancePage() {
   const [copiedCode, setCopiedCode] = useState(false);
   const [partnerLoading, setPartnerLoading] = useState(false);
 
+  /* ── debts ── */
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [showAddDebt, setShowAddDebt] = useState(false);
+  const [newDebtName, setNewDebtName] = useState("");
+  const [newDebtCreditor, setNewDebtCreditor] = useState("");
+  const [newDebtAmount, setNewDebtAmount] = useState("");
+  const [payDebtId, setPayDebtId] = useState<string | null>(null);
+  const [payDebtAmount, setPayDebtAmount] = useState("");
+  const [payDebtNotes, setPayDebtNotes] = useState("");
+  const [debtAiAnalysis, setDebtAiAnalysis] = useState("");
+  const [debtAiLoading, setDebtAiLoading] = useState(false);
+
   const fetchData = useCallback(async () => {
-    const [txRes, budRes] = await Promise.all([
+    const [txRes, budRes, debtRes] = await Promise.all([
       supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
       supabase.from("budgets").select("*").order("created_at", { ascending: true }),
+      supabase.from("debts").select("*").order("created_at", { ascending: true }),
     ]);
-    if (txRes.data)  setTransactions(txRes.data as Transaction[]);
-    if (budRes.data) setBudgets(budRes.data as Budget[]);
+    if (txRes.data)   setTransactions(txRes.data as Transaction[]);
+    if (budRes.data)  setBudgets(budRes.data as Budget[]);
+    if (debtRes.data) setDebts(debtRes.data as Debt[]);
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
@@ -574,6 +601,9 @@ export default function FinancePage() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "budgets" }, fetchData)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "budgets" }, fetchData)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "budgets" }, (p) => setBudgets(prev => prev.filter(b => b.id !== p.old.id)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "debts" }, fetchData)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "debts" }, fetchData)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "debts" }, (p) => setDebts(prev => prev.filter(d => d.id !== p.old.id)))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchData, fetchProfile]);
@@ -759,6 +789,77 @@ export default function FinancePage() {
     });
   };
 
+  /* ── debt handlers ── */
+  const addDebt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(newDebtAmount.replace(",", "."));
+    if (!newDebtName.trim() || isNaN(amount) || amount <= 0) return;
+    const { data } = await supabase.from("debts").insert([{
+      name: newDebtName.trim(),
+      creditor: newDebtCreditor.trim() || null,
+      total_amount: amount,
+      paid_amount: 0,
+      status: "active",
+      user_id: userId,
+    }]).select().single();
+    if (data) setDebts(prev => [...prev, data as Debt]);
+    setNewDebtName(""); setNewDebtCreditor(""); setNewDebtAmount("");
+    setShowAddDebt(false);
+  };
+
+  const recordDebtPayment = async (debtId: string) => {
+    const amount = parseFloat(payDebtAmount.replace(",", "."));
+    if (isNaN(amount) || amount <= 0) return;
+    const debt = debts.find(d => d.id === debtId);
+    if (!debt) return;
+    const newPaid = Math.min(debt.paid_amount + amount, debt.total_amount);
+    const newStatus: "active" | "quitada" = newPaid >= debt.total_amount ? "quitada" : "active";
+    await Promise.all([
+      supabase.from("debt_payments").insert([{
+        debt_id: debtId, user_id: userId, amount,
+        payment_date: new Date().toISOString().split("T")[0],
+        notes: payDebtNotes.trim() || null,
+      }]),
+      supabase.from("debts").update({ paid_amount: newPaid, status: newStatus }).eq("id", debtId),
+    ]);
+    setDebts(prev => prev.map(d => d.id === debtId ? { ...d, paid_amount: newPaid, status: newStatus } : d));
+    setPayDebtId(null); setPayDebtAmount(""); setPayDebtNotes("");
+  };
+
+  const markDebtQuitada = async (debtId: string) => {
+    const debt = debts.find(d => d.id === debtId);
+    if (!debt) return;
+    await supabase.from("debts").update({ paid_amount: debt.total_amount, status: "quitada" }).eq("id", debtId);
+    setDebts(prev => prev.map(d => d.id === debtId ? { ...d, paid_amount: d.total_amount, status: "quitada" } : d));
+  };
+
+  const deleteDebt = async (debtId: string) => {
+    await supabase.from("debts").delete().eq("id", debtId);
+    setDebts(prev => prev.filter(d => d.id !== debtId));
+  };
+
+  const analyzeDebtsWithAI = async () => {
+    setDebtAiLoading(true);
+    setDebtAiAnalysis("");
+    const activeDebts = debts.filter(d => d.status === "active");
+    const debtSummary = activeDebts.map(d =>
+      `- ${d.name}${d.creditor ? ` (${d.creditor})` : ""}: Total R$ ${Number(d.total_amount).toFixed(2)}, Pago R$ ${Number(d.paid_amount).toFixed(2)}, Restante R$ ${(Number(d.total_amount) - Number(d.paid_amount)).toFixed(2)}`
+    ).join("\n");
+    const message = `Tenho as seguintes dívidas ativas:\n${debtSummary}\n\nCom base no meu saldo mensal de R$ ${balance.toFixed(2)} (receitas R$ ${totalIn.toFixed(2)}, despesas R$ ${totalOut.toFixed(2)}), como devo priorizar o pagamento? Qual estratégia é melhor?`;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, history: [], context: { totalTasks: 0, doneTasks: 0, totalHabits: 0, completedHabits: 0, totalBalance: balance, totalIn, totalOut, recentTransactions: [] } }),
+      });
+      const json = await res.json();
+      setDebtAiAnalysis(json.reply || "Não foi possível gerar análise.");
+    } catch {
+      setDebtAiAnalysis("Erro ao conectar com o assistente.");
+    }
+    setDebtAiLoading(false);
+  };
+
   /* ── payment sources ── */
   const paymentSources = useMemo(() => [
     "Bolso (Salário)",
@@ -865,7 +966,7 @@ export default function FinancePage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => { setSettingSalaryMode(profile.salary_mode); setSettingSalaryAmount(profile.salary_amount > 0 ? profile.salary_amount.toString() : ""); setSettingSalaryAmount2(profile.salary_amount_2 > 0 ? profile.salary_amount_2.toString() : ""); setShowSettings(true); }}
+            onClick={() => { setSettingSalaryMode(profile.salary_mode); setSettingSalaryAmount(profile.salary_amount > 0 ? profile.salary_amount.toString() : ""); setSettingSalaryAmount2(profile.salary_amount_2 > 0 ? profile.salary_amount_2.toString() : ""); setSettingsTab("salary"); setDebtAiAnalysis(""); setShowSettings(true); }}
             className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
             title="Configurações Financeiras"
           >
@@ -1395,151 +1496,355 @@ export default function FinancePage() {
                 <Settings size={20} className="text-primary" />
                 Configurações Financeiras
               </h2>
-              <p className="text-xs text-muted-foreground mb-6">Salário e conta conjunta com parceiro(a)</p>
+              <p className="text-xs text-muted-foreground mb-4">Salário, dívidas e conta conjunta</p>
 
-              {/* Salary settings */}
-              <form onSubmit={saveSettings} className="flex flex-col gap-5 mb-6">
-                <div>
-                  <label className="text-sm font-medium text-white mb-3 block">Modo de recebimento do salário</label>
-                  <div className="flex gap-3">
-                    {(["full", "split"] as const).map(m => (
-                      <button
-                        key={m} type="button" onClick={() => setSettingSalaryMode(m)}
-                        className={`flex-1 py-3 rounded-xl text-sm font-medium border transition-all ${
-                          settingSalaryMode === m
-                            ? "bg-primary/20 text-primary border-primary/50"
-                            : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
-                        }`}
-                      >
-                        <div className="font-semibold">{m === "full" ? "Integral" : "Dividido"}</div>
-                        <div className="text-[10px] opacity-70 mt-0.5">
-                          {m === "full" ? "100% até dia 5" : "50% dia 5 + 50% dia 15"}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              {/* Tabs */}
+              <div className="flex gap-1 bg-white/5 rounded-xl p-1 mb-6">
+                {(["salary", "debts", "partner"] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setSettingsTab(tab)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
+                      settingsTab === tab ? "bg-white/10 text-white" : "text-muted-foreground hover:text-white"
+                    }`}
+                  >
+                    {tab === "salary" && <><Settings size={11} /> Salário</>}
+                    {tab === "debts" && <><CreditCard size={11} /> Dívidas{debts.filter(d => d.status === "active").length > 0 && <span className="bg-red-500/80 text-white text-[9px] font-bold px-1 rounded-full">{debts.filter(d => d.status === "active").length}</span>}</>}
+                    {tab === "partner" && <><Users size={11} /> Parceiro</>}
+                  </button>
+                ))}
+              </div>
 
-                {settingSalaryMode === "full" ? (
+              {/* ── Salary tab ── */}
+              {settingsTab === "salary" && (
+                <form onSubmit={saveSettings} className="flex flex-col gap-5">
                   <div>
-                    <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Valor do salário (R$)</label>
-                    <input
-                      type="number" step="0.01" value={settingSalaryAmount}
-                      onChange={e => setSettingSalaryAmount(e.target.value)}
-                      placeholder="Ex: 5000"
-                      className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
-                    />
-                    <p className="text-xs text-muted-foreground/60 mt-1.5">Pagamento integral até o dia 5</p>
+                    <label className="text-sm font-medium text-white mb-3 block">Modo de recebimento do salário</label>
+                    <div className="flex gap-3">
+                      {(["full", "split"] as const).map(m => (
+                        <button
+                          key={m} type="button" onClick={() => setSettingSalaryMode(m)}
+                          className={`flex-1 py-3 rounded-xl text-sm font-medium border transition-all ${
+                            settingSalaryMode === m
+                              ? "bg-primary/20 text-primary border-primary/50"
+                              : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
+                          }`}
+                        >
+                          <div className="font-semibold">{m === "full" ? "Integral" : "Dividido"}</div>
+                          <div className="text-[10px] opacity-70 mt-0.5">
+                            {m === "full" ? "100% até dia 5" : "50% dia 5 + 50% dia 15"}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
+
+                  {settingSalaryMode === "full" ? (
                     <div>
-                      <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
-                        1ª parcela — até dia 5 (R$)
-                      </label>
+                      <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Valor do salário (R$)</label>
                       <input
                         type="number" step="0.01" value={settingSalaryAmount}
                         onChange={e => setSettingSalaryAmount(e.target.value)}
-                        placeholder="Ex: 2500"
+                        placeholder="Ex: 5000"
                         className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
                       />
-                      <p className="text-xs text-muted-foreground/60 mt-1">Inclui adiantamento, horas extras, etc.</p>
+                      <p className="text-xs text-muted-foreground/60 mt-1.5">Pagamento integral até o dia 5</p>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
-                        2ª parcela — dia 15 (R$)
-                      </label>
-                      <input
-                        type="number" step="0.01" value={settingSalaryAmount2}
-                        onChange={e => setSettingSalaryAmount2(e.target.value)}
-                        placeholder="Ex: 3200"
-                        className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
-                      />
-                      <p className="text-xs text-muted-foreground/60 mt-1">Inclui sobreaviso, bônus, etc.</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground mb-1.5 block">1ª parcela — até dia 5 (R$)</label>
+                        <input
+                          type="number" step="0.01" value={settingSalaryAmount}
+                          onChange={e => setSettingSalaryAmount(e.target.value)}
+                          placeholder="Ex: 2500"
+                          className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                        />
+                        <p className="text-xs text-muted-foreground/60 mt-1">Inclui adiantamento, horas extras, etc.</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground mb-1.5 block">2ª parcela — dia 15 (R$)</label>
+                        <input
+                          type="number" step="0.01" value={settingSalaryAmount2}
+                          onChange={e => setSettingSalaryAmount2(e.target.value)}
+                          placeholder="Ex: 3200"
+                          className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                        />
+                        <p className="text-xs text-muted-foreground/60 mt-1">Inclui sobreaviso, bônus, etc.</p>
+                      </div>
+                      {(settingSalaryAmount || settingSalaryAmount2) && (
+                        <p className="text-xs text-emerald-400 font-medium">
+                          Total estimado: {fmt((parseFloat(settingSalaryAmount || "0") || 0) + (parseFloat(settingSalaryAmount2 || "0") || 0))}
+                        </p>
+                      )}
                     </div>
-                    {(settingSalaryAmount || settingSalaryAmount2) && (
-                      <p className="text-xs text-emerald-400 font-medium">
-                        Total estimado: {fmt((parseFloat(settingSalaryAmount || "0") || 0) + (parseFloat(settingSalaryAmount2 || "0") || 0))}
-                      </p>
-                    )}
-                  </div>
-                )}
+                  )}
 
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-xl font-medium bg-primary hover:bg-primary/90 text-white transition-colors"
-                >
-                  Salvar configurações
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    className="w-full py-3 rounded-xl font-medium bg-primary hover:bg-primary/90 text-white transition-colors"
+                  >
+                    Salvar configurações
+                  </button>
+                </form>
+              )}
 
-              {/* Partner / shared finance */}
-              <div className="border-t border-white/10 pt-6">
-                <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
-                  <Users size={16} className="text-emerald-400" />
-                  Conta Conjunta
-                </h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Compartilhe as finanças com seu(sua) parceiro(a). Ambos verão as mesmas transações.
-                </p>
-
-                {profile.partner_id ? (
-                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users size={16} className="text-emerald-400" />
-                      <span className="text-sm text-emerald-400 font-medium">Conta conjunta ativa</span>
+              {/* ── Debts tab ── */}
+              {settingsTab === "debts" && (
+                <div className="flex flex-col gap-4">
+                  {/* Summary KPIs */}
+                  {debts.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Ainda devendo</p>
+                        <p className="text-base font-bold text-red-400">
+                          {fmt(debts.filter(d => d.status === "active").reduce((s, d) => s + (Number(d.total_amount) - Number(d.paid_amount)), 0))}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{debts.filter(d => d.status === "active").length} dívida(s) ativa(s)</p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Total pago</p>
+                        <p className="text-base font-bold text-emerald-400">
+                          {fmt(debts.reduce((s, d) => s + Number(d.paid_amount), 0))}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{debts.filter(d => d.status === "quitada").length} quitada(s)</p>
+                      </div>
                     </div>
-                    <button
-                      onClick={disconnectPartner}
-                      className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                    >
-                      Desconectar
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {/* Your invite code */}
-                    {profile.invite_code && (
-                      <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                        <p className="text-xs text-muted-foreground mb-2">Seu código de convite:</p>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-lg font-mono font-bold text-white tracking-widest">{profile.invite_code}</span>
-                          <button
-                            onClick={copyInviteCode}
-                            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                              copiedCode
-                                ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400"
-                                : "bg-white/5 border-white/10 text-muted-foreground hover:text-white hover:bg-white/10"
-                            }`}
-                          >
-                            {copiedCode ? <Check size={12} /> : <Copy size={12} />}
-                            {copiedCode ? "Copiado!" : "Copiar"}
-                          </button>
-                        </div>
-                        <p className="text-xs text-muted-foreground/60 mt-1.5">Compartilhe este código com seu(sua) parceiro(a)</p>
+                  )}
+
+                  {/* Debt list */}
+                  <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-0.5">
+                    {debts.length === 0 && !showAddDebt && (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        <CreditCard size={28} className="mx-auto mb-2 opacity-30" />
+                        Nenhuma dívida cadastrada.
                       </div>
                     )}
+                    {debts.map(debt => {
+                      const remaining = Number(debt.total_amount) - Number(debt.paid_amount);
+                      const pct = Math.min(100, (Number(debt.paid_amount) / Number(debt.total_amount)) * 100);
+                      const isQuitada = debt.status === "quitada";
+                      const isPaying = payDebtId === debt.id;
+                      return (
+                        <div
+                          key={debt.id}
+                          className={`p-3 rounded-xl border transition-all ${isQuitada ? "border-emerald-500/20 bg-emerald-500/5" : "border-white/10 bg-white/5"}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-white truncate">{debt.name}</span>
+                                {isQuitada && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 shrink-0">✓ Quitada</span>
+                                )}
+                              </div>
+                              {debt.creditor && <p className="text-xs text-muted-foreground mt-0.5">{debt.creditor}</p>}
+                              <div className="mt-2 flex items-center gap-2">
+                                <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-500 ${isQuitada ? "bg-emerald-500" : "bg-primary"}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-muted-foreground shrink-0">{pct.toFixed(0)}%</span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                {fmt(Number(debt.paid_amount))} de {fmt(Number(debt.total_amount))}
+                                {!isQuitada && <span className="text-red-400 ml-1">· Resta {fmt(remaining)}</span>}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => deleteDebt(debt.id)}
+                              className="text-muted-foreground hover:text-red-400 transition-colors shrink-0 mt-0.5 p-1"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
 
-                    {/* Enter partner code */}
-                    <div className="flex gap-2">
+                          {!isQuitada && (
+                            <div className="flex gap-2 mt-2.5">
+                              <button
+                                onClick={() => { setPayDebtId(isPaying ? null : debt.id); setPayDebtAmount(""); setPayDebtNotes(""); }}
+                                className="flex-1 text-xs py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-muted-foreground hover:text-white transition-all"
+                              >
+                                💳 Registrar pagamento
+                              </button>
+                              <button
+                                onClick={() => markDebtQuitada(debt.id)}
+                                className="text-xs py-1.5 px-3 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 transition-all"
+                              >
+                                ✓ Quitada
+                              </button>
+                            </div>
+                          )}
+
+                          {isPaying && (
+                            <div className="mt-2 flex flex-col gap-2 p-2.5 rounded-xl bg-background border border-white/10">
+                              <input
+                                type="number" step="0.01" value={payDebtAmount}
+                                onChange={e => setPayDebtAmount(e.target.value)}
+                                placeholder="Valor pago agora (R$)"
+                                autoFocus
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                              />
+                              <input
+                                type="text" value={payDebtNotes}
+                                onChange={e => setPayDebtNotes(e.target.value)}
+                                placeholder="Observações (opcional)"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                              />
+                              <button
+                                onClick={() => recordDebtPayment(debt.id)}
+                                disabled={!payDebtAmount}
+                                className="w-full py-2 rounded-lg bg-primary hover:bg-primary/90 text-white text-sm font-medium transition-colors disabled:opacity-50"
+                              >
+                                Confirmar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Add debt form */}
+                  {showAddDebt ? (
+                    <form onSubmit={addDebt} className="flex flex-col gap-2.5 p-3 rounded-xl border border-red-500/20 bg-red-500/5">
+                      <p className="text-xs font-semibold text-white">Nova Dívida</p>
                       <input
-                        type="text" value={partnerCodeInput}
-                        onChange={e => setPartnerCodeInput(e.target.value.toUpperCase())}
-                        placeholder="Código do(a) parceiro(a)"
-                        maxLength={8}
-                        className="flex-1 bg-background border border-white/10 rounded-xl px-4 py-3 text-white font-mono tracking-widest text-sm focus:outline-none focus:border-emerald-500/50 transition-colors placeholder:tracking-normal placeholder:font-sans"
+                        type="text" value={newDebtName} onChange={e => setNewDebtName(e.target.value)}
+                        placeholder="Descrição (ex: Empréstimo banco)"
+                        autoFocus
+                        className="w-full bg-background border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500/50 transition-colors"
                       />
+                      <input
+                        type="text" value={newDebtCreditor} onChange={e => setNewDebtCreditor(e.target.value)}
+                        placeholder="Credor (ex: Caixa Econômica) — opcional"
+                        className="w-full bg-background border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500/50 transition-colors"
+                      />
+                      <input
+                        type="number" step="0.01" value={newDebtAmount} onChange={e => setNewDebtAmount(e.target.value)}
+                        placeholder="Valor total da dívida (R$)"
+                        className="w-full bg-background border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500/50 transition-colors"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setShowAddDebt(false); setNewDebtName(""); setNewDebtCreditor(""); setNewDebtAmount(""); }}
+                          className="flex-1 py-2 rounded-lg border border-white/10 text-muted-foreground hover:text-white text-sm transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={!newDebtName.trim() || !newDebtAmount}
+                          className="flex-1 py-2 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+                        >
+                          Adicionar
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => setShowAddDebt(true)}
+                      className="w-full py-2.5 rounded-xl border border-dashed border-white/20 text-muted-foreground hover:text-white hover:border-white/40 text-sm transition-all"
+                    >
+                      + Adicionar dívida
+                    </button>
+                  )}
+
+                  {/* AI Analysis */}
+                  {debts.filter(d => d.status === "active").length > 0 && (
+                    <div className="border-t border-white/10 pt-3">
                       <button
-                        onClick={connectPartner}
-                        disabled={partnerLoading || !partnerCodeInput.trim()}
-                        className="px-4 py-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-medium hover:bg-emerald-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={analyzeDebtsWithAI}
+                        disabled={debtAiLoading}
+                        className="w-full py-2.5 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 text-violet-400 text-sm font-medium transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                       >
-                        {partnerLoading ? "…" : "Conectar"}
+                        <Sparkles size={14} />
+                        {debtAiLoading ? "Analisando…" : "Como quitar minhas dívidas? (IA)"}
+                      </button>
+
+                      {debtAiAnalysis && (
+                        <div className="mt-3 p-3 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                          <p className="text-[10px] font-semibold text-violet-400 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
+                            <Sparkles size={10} /> C4 Assistant
+                          </p>
+                          <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-line">{debtAiAnalysis}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Partner tab ── */}
+              {settingsTab === "partner" && (
+                <div>
+                  <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+                    <Users size={16} className="text-emerald-400" />
+                    Conta Conjunta
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Compartilhe as finanças com seu(sua) parceiro(a). Ambos verão as mesmas transações.
+                  </p>
+
+                  {profile.partner_id ? (
+                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Users size={16} className="text-emerald-400" />
+                        <span className="text-sm text-emerald-400 font-medium">Conta conjunta ativa</span>
+                      </div>
+                      <button
+                        onClick={disconnectPartner}
+                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        Desconectar
                       </button>
                     </div>
-                  </div>
-                )}
-              </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {profile.invite_code && (
+                        <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                          <p className="text-xs text-muted-foreground mb-2">Seu código de convite:</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-lg font-mono font-bold text-white tracking-widest">{profile.invite_code}</span>
+                            <button
+                              onClick={copyInviteCode}
+                              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                                copiedCode
+                                  ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400"
+                                  : "bg-white/5 border-white/10 text-muted-foreground hover:text-white hover:bg-white/10"
+                              }`}
+                            >
+                              {copiedCode ? <Check size={12} /> : <Copy size={12} />}
+                              {copiedCode ? "Copiado!" : "Copiar"}
+                            </button>
+                          </div>
+                          <p className="text-xs text-muted-foreground/60 mt-1.5">Compartilhe este código com seu(sua) parceiro(a)</p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <input
+                          type="text" value={partnerCodeInput}
+                          onChange={e => setPartnerCodeInput(e.target.value.toUpperCase())}
+                          placeholder="Código do(a) parceiro(a)"
+                          maxLength={8}
+                          className="flex-1 bg-background border border-white/10 rounded-xl px-4 py-3 text-white font-mono tracking-widest text-sm focus:outline-none focus:border-emerald-500/50 transition-colors placeholder:tracking-normal placeholder:font-sans"
+                        />
+                        <button
+                          onClick={connectPartner}
+                          disabled={partnerLoading || !partnerCodeInput.trim()}
+                          className="px-4 py-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-medium hover:bg-emerald-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {partnerLoading ? "…" : "Conectar"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
