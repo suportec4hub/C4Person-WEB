@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
+const CUSTOM_CAT_COLORS = ["#f43f5e","#fb923c","#fbbf24","#a3e635","#34d399","#22d3ee","#818cf8","#e879f9","#f472b6","#38bdf8"];
+
 interface Transaction {
   id: string;
   name: string;
@@ -65,6 +67,13 @@ export default function FinancePage() {
   const [savingsGoal, setSavingsGoal] = useState(0);
   const [showSavingsModal, setShowSavingsModal] = useState(false);
   const [savingsInput, setSavingsInput] = useState("");
+
+  /* ── custom categories ── */
+  const [customExpCats, setCustomExpCats] = useState<{label:string;color:string}[]>([]);
+  const [customIncCats, setCustomIncCats] = useState<{label:string;color:string}[]>([]);
+  const [addingCat, setAddingCat] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const newCatInputRef = useRef<HTMLInputElement>(null);
 
   /* ── month navigation ── */
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
@@ -136,10 +145,14 @@ export default function FinancePage() {
       acc[cat] = (acc[cat] || 0) + Number(t.amount);
       return acc;
     }, {});
+    const customAll = [...customExpCats, ...customIncCats];
     return Object.entries(bycat)
-      .map(([label, value]) => ({ label, value, color: getCategoryColor(label) }))
+      .map(([label, value]) => ({
+        label, value,
+        color: customAll.find(c => c.label === label)?.color ?? getCategoryColor(label),
+      }))
       .sort((a, b) => b.value - a.value);
-  }, [monthlyTx]);
+  }, [monthlyTx, customExpCats, customIncCats]);
 
   const conicGradient = useMemo(() => {
     if (categoryData.length === 0) return "conic-gradient(#27272a 0% 100%)";
@@ -259,6 +272,10 @@ export default function FinancePage() {
     try {
       const stored = localStorage.getItem("c4person_savings_goal");
       if (stored) setSavingsGoal(parseFloat(stored));
+      const ec = localStorage.getItem("c4_custom_expense_cats");
+      const ic = localStorage.getItem("c4_custom_income_cats");
+      if (ec) setCustomExpCats(JSON.parse(ec));
+      if (ic) setCustomIncCats(JSON.parse(ic));
     } catch { /* noop */ }
 
     const channel = supabase.channel("finance-realtime")
@@ -422,10 +439,43 @@ export default function FinancePage() {
     });
   };
 
+  /* ── add custom category ── */
+  const addCustomCategory = () => {
+    const name = newCatName.trim();
+    if (!name) { setAddingCat(false); return; }
+    const isIncome = newType === "in";
+    const base = isIncome ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+    const custom = isIncome ? customIncCats : customExpCats;
+    const all = [...base, ...custom];
+    const existing = all.find(c => c.label.toLowerCase() === name.toLowerCase());
+    if (existing) { setNewCategory(existing.label); setAddingCat(false); setNewCatName(""); return; }
+    const color = CUSTOM_CAT_COLORS[custom.length % CUSTOM_CAT_COLORS.length];
+    const cat = { label: name, color };
+    if (isIncome) {
+      const updated = [...customIncCats, cat];
+      setCustomIncCats(updated);
+      try { localStorage.setItem("c4_custom_income_cats", JSON.stringify(updated)); } catch { /* noop */ }
+    } else {
+      const updated = [...customExpCats, cat];
+      setCustomExpCats(updated);
+      try { localStorage.setItem("c4_custom_expense_cats", JSON.stringify(updated)); } catch { /* noop */ }
+    }
+    setNewCategory(name);
+    setAddingCat(false);
+    setNewCatName("");
+  };
+
+  /* ── local color resolver (base + custom) ── */
+  const allCustomCats = [...customExpCats, ...customIncCats];
+  const getCatColor = (label: string) =>
+    allCustomCats.find(c => c.label === label)?.color ?? getCategoryColor(label);
+
   if (!mounted) return null;
   if (loading) return <SkeletonPage />;
 
-  const categories = newType === "in" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const categories = newType === "in"
+    ? [...INCOME_CATEGORIES, ...customIncCats]
+    : [...EXPENSE_CATEGORIES, ...customExpCats];
   const isThisMonth = isSameMonth(viewMonth, new Date());
 
   return (
@@ -893,9 +943,9 @@ export default function FinancePage() {
                       <span
                         className="text-xs px-1.5 py-0.5 rounded-md border"
                         style={{
-                          color: getCategoryColor(t.category),
-                          backgroundColor: `${getCategoryColor(t.category)}18`,
-                          borderColor: `${getCategoryColor(t.category)}30`,
+                          color: getCatColor(t.category),
+                          backgroundColor: `${getCatColor(t.category)}18`,
+                          borderColor: `${getCatColor(t.category)}30`,
                         }}
                       >
                         {t.category}
@@ -1230,6 +1280,32 @@ export default function FinancePage() {
                         {c.label}
                       </button>
                     ))}
+                    {/* Add custom category */}
+                    {addingCat ? (
+                      <input
+                        ref={newCatInputRef}
+                        autoFocus
+                        type="text"
+                        value={newCatName}
+                        onChange={e => setNewCatName(e.target.value)}
+                        onBlur={addCustomCategory}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") { e.preventDefault(); addCustomCategory(); }
+                          if (e.key === "Escape") { setAddingCat(false); setNewCatName(""); }
+                        }}
+                        placeholder="Nova…"
+                        maxLength={20}
+                        className="py-2 px-2 rounded-xl text-xs font-medium border border-primary/50 bg-primary/10 text-white focus:outline-none col-span-1 text-center"
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => { setAddingCat(true); setNewCatName(""); }}
+                        className="py-2 px-1 rounded-xl text-xs font-medium border border-dashed border-white/20 text-muted-foreground hover:text-white hover:border-white/40 text-center transition-all"
+                      >
+                        + Nova
+                      </button>
+                    )}
                   </div>
                 </div>
 
