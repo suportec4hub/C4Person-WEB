@@ -13,6 +13,7 @@ import {
   ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays, Pencil,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
+import XLSXStyle from "xlsx-js-style";
 
 const CUSTOM_CAT_COLORS = ["#f43f5e","#fb923c","#fbbf24","#a3e635","#34d399","#22d3ee","#818cf8","#e879f9","#f472b6","#38bdf8"];
 
@@ -414,214 +415,141 @@ export default function FinancePage() {
 
   const exportSheet = () => {
     const monthLabel = format(viewMonth, "MMMM 'de' yyyy", { locale: ptBR });
-    const now = format(new Date(), "dd/MM/yyyy 'às' HH:mm");
+    const now = format(new Date(), "dd/MM/yyyy HH:mm");
     const savingsRate = totalIn > 0 ? ((balance / totalIn) * 100).toFixed(1) : "0.0";
     const filename = `financas_${format(viewMonth, "yyyy-MM")}`;
 
-    const catRows = categoryData.map((c, i) => {
-      const pct = totalOut > 0 ? ((c.value / totalOut) * 100).toFixed(1) : "0";
-      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
-      return `<tr style="background:${bg}">
-        <td style="padding:10px 16px">
-          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c.color};margin-right:8px;vertical-align:middle"></span>
-          <span style="font-weight:500">${c.label}</span>
-        </td>
-        <td style="padding:10px 16px;text-align:right;font-weight:700;color:#ef4444">${fmt(c.value)}</td>
-        <td style="padding:10px 16px;text-align:right;color:#64748b">${pct}%</td>
-        <td style="padding:10px 24px 10px 8px">
-          <div style="background:#e2e8f0;border-radius:99px;height:7px;width:120px;overflow:hidden">
-            <div style="background:${c.color};height:100%;width:${pct}%;border-radius:99px"></div>
-          </div>
-        </td>
-      </tr>`;
-    }).join("");
+    // ── Style helpers ────────────────────────────────────────────────
+    const fill = (rgb: string) => ({ patternType: "solid" as const, fgColor: { rgb } });
+    const font = (rgb: string, bold = false, sz = 10) => ({ color: { rgb }, bold, sz });
 
-    const walletRows = walletBalances.map((w, i) => {
-      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
-      return `<tr style="background:${bg}">
-        <td style="padding:10px 16px">
-          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${w.color};margin-right:8px;vertical-align:middle"></span>
-          <span style="font-weight:500">${w.label}</span>
-        </td>
-        <td style="padding:10px 16px;text-align:right;color:#10b981;font-weight:600">${fmt(w.received)}</td>
-        <td style="padding:10px 16px;text-align:right;color:#ef4444;font-weight:600">${fmt(w.spent)}</td>
-        <td style="padding:10px 16px;text-align:right;font-weight:800;font-size:14px;color:${w.balance >= 0 ? "#10b981" : "#ef4444"}">${fmt(w.balance)}</td>
-      </tr>`;
-    }).join("");
+    const hdr = (align: "left"|"center"|"right" = "left") => ({
+      font: font("FFFFFF", true, 10),
+      fill: fill("1E293B"),
+      alignment: { horizontal: align, vertical: "center" as const, wrapText: false },
+      border: { bottom: { style: "thin" as const, color: { rgb: "334155" } } },
+    });
 
-    const txRows = filteredTx.map((t, i) => {
-      const isIn = t.type === "in";
-      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
-      const sources = Array.isArray(t.payment_source) && t.payment_source.length > 0
-        ? t.payment_source.join(" + ")
-        : "—";
-      return `<tr style="background:${bg}">
-        <td style="padding:9px 16px;color:#64748b;white-space:nowrap">${t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : "—"}</td>
-        <td style="padding:9px 16px;font-weight:500">${t.name}</td>
-        <td style="padding:9px 16px">
-          <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.3px;background:${isIn ? "#dcfce7" : "#fee2e2"};color:${isIn ? "#16a34a" : "#dc2626"}">
-            ${isIn ? "RECEITA" : "DESPESA"}
-          </span>
-        </td>
-        <td style="padding:9px 16px;color:#64748b">${t.category || "Outros"}</td>
-        <td style="padding:9px 16px;color:#94a3b8;font-size:11px">${sources}</td>
-        <td style="padding:9px 16px;text-align:right;font-weight:700;font-size:13px;color:${isIn ? "#10b981" : "#ef4444"}">${isIn ? "+" : "−"}${fmt(Number(t.amount))}</td>
-      </tr>`;
-    }).join("");
+    const cell = (rgb = "1E293B", bg = "FFFFFF", bold = false, sz = 10, align: "left"|"center"|"right" = "left") => ({
+      font: font(rgb, bold, sz),
+      fill: fill(bg),
+      alignment: { horizontal: align, vertical: "center" as const },
+    });
 
-    const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<title>C4Person · ${monthLabel}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f1f5f9;color:#1e293b;min-height:100vh;padding:32px 16px}
-  .wrap{max-width:960px;margin:0 auto}
+    const num = (v: number, colorRgb: string, bg = "FFFFFF", sz = 10) => ({
+      v, t: "n" as const,
+      z: '#,##0.00',
+      s: cell(colorRgb, bg, true, sz, "right"),
+    });
 
-  .hero{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#1e293b 100%);border-radius:20px;padding:36px 40px;color:#fff;margin-bottom:28px;position:relative;overflow:hidden}
-  .hero::before{content:"";position:absolute;top:-60px;right:-60px;width:200px;height:200px;border-radius:50%;background:rgba(59,130,246,.15)}
-  .hero::after{content:"";position:absolute;bottom:-40px;left:30%;width:140px;height:140px;border-radius:50%;background:rgba(16,185,129,.1)}
-  .hero-inner{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:flex-end}
-  .hero h1{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin-bottom:6px}
-  .hero .app{font-size:26px;font-weight:800;letter-spacing:-1px}
-  .hero .app span{color:#3b82f6}
-  .hero-right{text-align:right}
-  .hero-right .month{font-size:32px;font-weight:900;letter-spacing:-1.5px;text-transform:capitalize;line-height:1}
-  .hero-right .meta{color:#94a3b8;font-size:11px;margin-top:6px}
+    const alt = (i: number) => i % 2 === 0 ? "FFFFFF" : "F8FAFC";
 
-  .kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
-  .kpi{background:#fff;border-radius:14px;padding:20px;border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(0,0,0,.05);position:relative;overflow:hidden}
-  .kpi::after{content:"";position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0;background:var(--accent,#e2e8f0)}
-  .kpi.g{--accent:#10b981} .kpi.r{--accent:#ef4444} .kpi.b{--accent:#3b82f6} .kpi.v{--accent:#8b5cf6}
-  .kpi-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#94a3b8;margin-bottom:10px}
-  .kpi-val{font-size:22px;font-weight:900;letter-spacing:-0.5px;line-height:1}
-  .kpi.g .kpi-val{color:#10b981} .kpi.r .kpi-val{color:#ef4444} .kpi.b .kpi-val{color:#3b82f6} .kpi.v .kpi-val{color:#8b5cf6}
-  .kpi-sub{font-size:11px;color:#94a3b8;margin-top:6px}
+    // ── Sheet 1: Resumo ──────────────────────────────────────────────
+    const resumoRows = [
+      [{ v: `Relatório Financeiro · C4Person · ${monthLabel}`, s: { font: font("0F172A", true, 14) } }, { v: "" }, { v: "" }, { v: "" }],
+      [{ v: `Exportado em: ${now}`, s: { font: font("94A3B8", false, 9) } }, { v: "" }, { v: "" }, { v: "" }],
+      [{ v: "" }, { v: "" }, { v: "" }, { v: "" }],
+      [
+        { v: "RECEITAS",      s: { font: font("16A34A", true, 9), fill: fill("DCFCE7"), alignment: { horizontal: "center" as const } } },
+        { v: "DESPESAS",      s: { font: font("DC2626", true, 9), fill: fill("FEE2E2"), alignment: { horizontal: "center" as const } } },
+        { v: "SALDO DO MÊS",  s: { font: font(balance >= 0 ? "16A34A" : "DC2626", true, 9), fill: fill(balance >= 0 ? "DCFCE7" : "FEE2E2"), alignment: { horizontal: "center" as const } } },
+        { v: "POUPANÇA %",    s: { font: font("7C3AED", true, 9), fill: fill("EDE9FE"), alignment: { horizontal: "center" as const } } },
+      ],
+      [
+        { ...num(totalIn, "10B981", "DCFCE7", 16), s: { ...cell("10B981", "DCFCE7", true, 16, "center") } },
+        { ...num(totalOut, "EF4444", "FEE2E2", 16), s: { ...cell("EF4444", "FEE2E2", true, 16, "center") } },
+        { ...num(balance, balance >= 0 ? "10B981" : "EF4444", balance >= 0 ? "DCFCE7" : "FEE2E2", 16), s: { ...cell(balance >= 0 ? "10B981" : "EF4444", balance >= 0 ? "DCFCE7" : "FEE2E2", true, 16, "center") } },
+        { v: `${savingsRate}%`, s: { font: font("7C3AED", true, 16), fill: fill("EDE9FE"), alignment: { horizontal: "center" as const } } },
+      ],
+      [
+        { v: `${filteredTx.filter(t => t.type === "in").length} lançamento(s)`, s: { font: font("94A3B8", false, 9), fill: fill("DCFCE7"), alignment: { horizontal: "center" as const } } },
+        { v: `${filteredTx.filter(t => t.type === "out").length} lançamento(s)`, s: { font: font("94A3B8", false, 9), fill: fill("FEE2E2"), alignment: { horizontal: "center" as const } } },
+        { v: balance >= 0 ? "✓ Positivo" : "✕ Negativo", s: { font: font(balance >= 0 ? "10B981" : "EF4444", false, 9), fill: fill(balance >= 0 ? "DCFCE7" : "FEE2E2"), alignment: { horizontal: "center" as const } } },
+        { v: "da receita guardada", s: { font: font("94A3B8", false, 9), fill: fill("EDE9FE"), alignment: { horizontal: "center" as const } } },
+      ],
+    ];
+    const wsResumo = XLSXStyle.utils.aoa_to_sheet(resumoRows);
+    wsResumo["!cols"] = [{ wch: 24 }, { wch: 24 }, { wch: 24 }, { wch: 24 }];
+    wsResumo["!rows"] = [{ hpt: 22 }, { hpt: 14 }, { hpt: 6 }, { hpt: 18 }, { hpt: 32 }, { hpt: 16 }];
+    XLSXStyle.utils.book_append_sheet(XLSXStyle.utils.book_new(), wsResumo, "Resumo");
 
-  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+    const wb = XLSXStyle.utils.book_new();
+    XLSXStyle.utils.book_append_sheet(wb, wsResumo, "Resumo");
 
-  .card{background:#fff;border-radius:14px;border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(0,0,0,.05);overflow:hidden;margin-bottom:16px}
-  .card-head{padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between}
-  .card-head h2{font-size:13px;font-weight:700;color:#0f172a}
-  .card-head .chip{font-size:10px;font-weight:700;background:#f1f5f9;color:#64748b;padding:3px 10px;border-radius:20px;letter-spacing:.3px}
+    // ── Sheet 2: Categorias ──────────────────────────────────────────
+    if (categoryData.length > 0) {
+      const catData = [
+        [{ v: "Categoria", s: hdr() }, { v: "Valor (R$)", s: hdr("right") }, { v: "% do Total", s: hdr("right") }],
+        ...categoryData.map((c, i) => {
+          const pct = totalOut > 0 ? ((c.value / totalOut) * 100).toFixed(1) : "0";
+          const bg = alt(i);
+          return [
+            { v: c.label, s: cell("1E293B", bg, true) },
+            { v: c.value, t: "n" as const, z: '#,##0.00', s: cell("EF4444", bg, true, 10, "right") },
+            { v: `${pct}%`, s: cell("64748B", bg, false, 10, "right") },
+          ];
+        }),
+      ];
+      const wsCat = XLSXStyle.utils.aoa_to_sheet(catData);
+      wsCat["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 14 }];
+      XLSXStyle.utils.book_append_sheet(wb, wsCat, "Categorias");
+    }
 
-  table{width:100%;border-collapse:collapse}
-  th{padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;background:#f8fafc;border-bottom:1px solid #f1f5f9}
-  th:last-child{text-align:right;padding-right:20px}
+    // ── Sheet 3: Carteiras ───────────────────────────────────────────
+    if (walletBalances.length > 0) {
+      const walletData = [
+        [{ v: "Carteira", s: hdr() }, { v: "Recebido (R$)", s: hdr("right") }, { v: "Gasto (R$)", s: hdr("right") }, { v: "Saldo (R$)", s: hdr("right") }],
+        ...walletBalances.map((w, i) => {
+          const bg = alt(i);
+          return [
+            { v: w.label, s: cell("1E293B", bg, true) },
+            { v: w.received, t: "n" as const, z: '#,##0.00', s: cell("10B981", bg, true, 10, "right") },
+            { v: w.spent,    t: "n" as const, z: '#,##0.00', s: cell("EF4444", bg, true, 10, "right") },
+            { v: w.balance,  t: "n" as const, z: '#,##0.00', s: cell(w.balance >= 0 ? "10B981" : "EF4444", bg, true, 12, "right") },
+          ];
+        }),
+      ];
+      const wsWallet = XLSXStyle.utils.aoa_to_sheet(walletData);
+      wsWallet["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+      XLSXStyle.utils.book_append_sheet(wb, wsWallet, "Carteiras");
+    }
 
-  .footer{text-align:center;font-size:11px;color:#94a3b8;margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0}
-  .footer strong{color:#64748b}
-</style>
-</head>
-<body>
-<div class="wrap">
+    // ── Sheet 4: Lançamentos ─────────────────────────────────────────
+    const txData = [
+      [
+        { v: "Data",       s: hdr() },
+        { v: "Descrição",  s: hdr() },
+        { v: "Tipo",       s: hdr("center") },
+        { v: "Categoria",  s: hdr() },
+        { v: "Origem",     s: hdr() },
+        { v: "Valor (R$)", s: hdr("right") },
+      ],
+      ...filteredTx.map((t, i) => {
+        const isIn = t.type === "in";
+        const bg = alt(i);
+        const typeBg = isIn ? "DCFCE7" : "FEE2E2";
+        const typeColor = isIn ? "16A34A" : "DC2626";
+        const sources = Array.isArray(t.payment_source) && t.payment_source.length > 0
+          ? t.payment_source.join(" + ")
+          : "—";
+        return [
+          { v: t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : "—", s: cell("64748B", bg, false) },
+          { v: t.name,                   s: cell("1E293B", bg, true) },
+          { v: isIn ? "Receita" : "Despesa", s: cell(typeColor, typeBg, true, 10, "center") },
+          { v: t.category || "Outros",   s: cell("64748B", bg) },
+          { v: sources,                  s: cell("94A3B8", bg, false, 9) },
+          { v: Number(t.amount), t: "n" as const, z: '#,##0.00', s: cell(isIn ? "10B981" : "EF4444", bg, true, 11, "right") },
+        ];
+      }),
+    ];
+    const wsTx = XLSXStyle.utils.aoa_to_sheet(txData);
+    wsTx["!cols"] = [{ wch: 13 }, { wch: 32 }, { wch: 12 }, { wch: 18 }, { wch: 26 }, { wch: 16 }];
+    XLSXStyle.utils.book_append_sheet(wb, wsTx, "Lançamentos");
 
-  <div class="hero">
-    <div class="hero-inner">
-      <div>
-        <h1>Relatório Financeiro</h1>
-        <div class="app">C4<span>Person</span></div>
-      </div>
-      <div class="hero-right">
-        <div class="month">${monthLabel}</div>
-        <div class="meta">Exportado em ${now}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="kpi-row">
-    <div class="kpi g">
-      <div class="kpi-lbl">Receitas</div>
-      <div class="kpi-val">${fmt(totalIn)}</div>
-      <div class="kpi-sub">${filteredTx.filter(t => t.type === "in").length} lançamento(s)</div>
-    </div>
-    <div class="kpi r">
-      <div class="kpi-lbl">Despesas</div>
-      <div class="kpi-val">${fmt(totalOut)}</div>
-      <div class="kpi-sub">${filteredTx.filter(t => t.type === "out").length} lançamento(s)</div>
-    </div>
-    <div class="kpi ${balance >= 0 ? "g" : "r"}">
-      <div class="kpi-lbl">Saldo do Mês</div>
-      <div class="kpi-val">${fmt(balance)}</div>
-      <div class="kpi-sub">${balance >= 0 ? "✓ Positivo" : "✕ Negativo"}</div>
-    </div>
-    <div class="kpi v">
-      <div class="kpi-lbl">Taxa de Poupança</div>
-      <div class="kpi-val">${savingsRate}%</div>
-      <div class="kpi-sub">da receita guardada</div>
-    </div>
-  </div>
-
-  <div class="cols">
-    ${categoryData.length > 0 ? `
-    <div class="card">
-      <div class="card-head">
-        <h2>Despesas por Categoria</h2>
-        <span class="chip">${categoryData.length} categorias</span>
-      </div>
-      <table>
-        <thead><tr>
-          <th>Categoria</th>
-          <th style="text-align:right">Valor</th>
-          <th style="text-align:right;padding-right:20px">%</th>
-          <th></th>
-        </tr></thead>
-        <tbody>${catRows}</tbody>
-      </table>
-    </div>` : ""}
-
-    ${walletBalances.length > 0 ? `
-    <div class="card">
-      <div class="card-head">
-        <h2>Saldo por Carteira</h2>
-        <span class="chip">${walletBalances.length} carteira(s)</span>
-      </div>
-      <table>
-        <thead><tr>
-          <th>Carteira</th>
-          <th style="text-align:right">Recebido</th>
-          <th style="text-align:right">Gasto</th>
-          <th style="text-align:right;padding-right:16px">Saldo</th>
-        </tr></thead>
-        <tbody>${walletRows}</tbody>
-      </table>
-    </div>` : ""}
-  </div>
-
-  <div class="card">
-    <div class="card-head">
-      <h2>Todos os Lançamentos</h2>
-      <span class="chip">${filteredTx.length} itens</span>
-    </div>
-    <table>
-      <thead><tr>
-        <th>Data</th>
-        <th>Descrição</th>
-        <th>Tipo</th>
-        <th>Categoria</th>
-        <th>Origem</th>
-        <th style="text-align:right;padding-right:20px">Valor</th>
-      </tr></thead>
-      <tbody>${txRows}</tbody>
-    </table>
-  </div>
-
-  <div class="footer">
-    Relatório gerado pelo <strong>C4Person</strong> · ${now}
-  </div>
-</div>
-</body>
-</html>`;
-
-    const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${filename}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+    XLSXStyle.writeFile(wb, `${filename}.xlsx`);
   };
+
+
 
   useEffect(() => {
     setMounted(true);
