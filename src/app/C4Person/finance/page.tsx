@@ -1567,19 +1567,25 @@ export default function FinancePage() {
                 <div>
                   <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Categoria</label>
                   <div className="grid grid-cols-3 gap-2 max-h-52 overflow-y-auto pr-1">
-                    {[...EXPENSE_CATEGORIES, ...customExpCats].map(c => (
-                      <button
-                        key={c.label} type="button" onClick={() => setBudgetCategory(c.label)}
-                        className={`py-2 px-1 rounded-xl text-xs font-medium border text-center transition-all ${
-                          budgetCategory === c.label ? "ring-2 ring-offset-1 ring-offset-card" : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
-                        }`}
-                        style={budgetCategory === c.label
-                          ? { backgroundColor: `${c.color}25`, borderColor: `${c.color}60`, color: c.color }
-                          : {}}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
+                    {[...EXPENSE_CATEGORIES, ...customExpCats].map(c => {
+                      const sel = budgetCategory === c.label;
+                      return (
+                        <button
+                          key={c.label} type="button" onClick={() => setBudgetCategory(c.label)}
+                          className={`py-2 px-1 rounded-xl text-xs font-medium border text-center transition-all ${
+                            sel ? "border-2 font-semibold" : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
+                          }`}
+                          style={sel ? {
+                            backgroundColor: `${c.color}18`,
+                            borderColor: c.color,
+                            color: c.color,
+                            boxShadow: `0 0 0 1px ${c.color}40`,
+                          } : {}}
+                        >
+                          {c.label}
+                        </button>
+                      );
+                    })}
                   </div>
                   {budgetCategory && (
                     <p className="mt-2 text-xs text-muted-foreground">
@@ -1674,23 +1680,27 @@ export default function FinancePage() {
                 <div>
                   <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Categoria</label>
                   <div className="grid grid-cols-4 gap-2">
-                    {categories.map(c => (
-                      <button
-                        key={c.label} type="button" onClick={() => setNewCategory(c.label)}
-                        className={`py-2 px-1 rounded-xl text-xs font-medium border text-center transition-colors ${
-                          newCategory === c.label
-                            ? "border-opacity-50 text-white"
-                            : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
-                        }`}
-                        style={newCategory === c.label ? {
-                          backgroundColor: `${c.color}20`,
-                          borderColor: `${c.color}50`,
-                          color: c.color,
-                        } : {}}
-                      >
-                        {c.label}
-                      </button>
-                    ))}
+                    {categories.map(c => {
+                      const selected = newCategory === c.label;
+                      return (
+                        <button
+                          key={c.label} type="button" onClick={() => setNewCategory(c.label)}
+                          className={`py-2 px-1 rounded-xl text-xs font-medium border text-center transition-all ${
+                            selected
+                              ? "border-2 font-semibold"
+                              : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
+                          }`}
+                          style={selected ? {
+                            backgroundColor: `${c.color}18`,
+                            borderColor: c.color,
+                            color: c.color,
+                            boxShadow: `0 0 0 1px ${c.color}40`,
+                          } : {}}
+                        >
+                          {c.label}
+                        </button>
+                      );
+                    })}
                     {/* Add custom category */}
                     {addingCat ? (
                       <input
