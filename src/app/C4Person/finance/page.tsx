@@ -791,6 +791,10 @@ export default function FinancePage() {
       const updated = [...customExpCats, cat];
       setCustomExpCats(updated);
       try { localStorage.setItem("c4_custom_expense_cats", JSON.stringify(updated)); } catch { /* noop */ }
+      // Abre automaticamente o modal de orçamento para definir o limite da nova categoria
+      setBudgetCategory(name);
+      setBudgetLimit("");
+      setShowBudgetModal(true);
     }
     setNewCategory(name);
     setAddingCat(false);
@@ -1562,19 +1566,29 @@ export default function FinancePage() {
               <form onSubmit={addBudget} className="flex flex-col gap-5">
                 <div>
                   <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Categoria</label>
-                  <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                    {EXPENSE_CATEGORIES.map(c => (
+                  <div className="grid grid-cols-3 gap-2 max-h-52 overflow-y-auto pr-1">
+                    {[...EXPENSE_CATEGORIES, ...customExpCats].map(c => (
                       <button
                         key={c.label} type="button" onClick={() => setBudgetCategory(c.label)}
-                        className={`py-2 px-1 rounded-xl text-xs font-medium border text-center transition-colors ${
-                          budgetCategory === c.label ? "" : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
+                        className={`py-2 px-1 rounded-xl text-xs font-medium border text-center transition-all ${
+                          budgetCategory === c.label ? "ring-2 ring-offset-1 ring-offset-card" : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
                         }`}
-                        style={budgetCategory === c.label ? { backgroundColor: `${c.color}20`, borderColor: `${c.color}50`, color: c.color } : {}}
+                        style={budgetCategory === c.label
+                          ? { backgroundColor: `${c.color}25`, borderColor: `${c.color}60`, color: c.color }
+                          : {}}
                       >
                         {c.label}
                       </button>
                     ))}
                   </div>
+                  {budgetCategory && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Selecionado: <span className="text-white font-medium">{budgetCategory}</span>
+                      {budgets.find(b => b.category === budgetCategory) && (
+                        <span className="ml-1 text-yellow-400">(já tem orçamento — irá atualizar)</span>
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Limite Mensal (R$)</label>
