@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { CheckCircle2, Lock, Zap, ArrowRight, Clock } from "lucide-react";
 import { CheckoutButton } from "@/components/CheckoutButton";
 import Link from "next/link";
