@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
@@ -8,10 +9,12 @@ const API = "https://api.abacatepay.com/v1";
 // Link de pagamento criado no dashboard do AbacatePay
 const CHECKOUT_URL = "https://app.abacatepay.com/pay/bill_S54ZPCfzmMqTHjCJuqRuTZ2m";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseAdmin = (() => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null as unknown as ReturnType<typeof createClient>;
+  return createClient(url, key);
+})();
 
 async function tryEnsureCustomer(email: string, name?: string): Promise<string | null> {
   try {

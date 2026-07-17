@@ -3,10 +3,13 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
-export const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Guard against missing env vars during Next.js build (force-dynamic routes prevent actual calls)
+export const supabaseAdmin = (() => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null as unknown as ReturnType<typeof createClient>;
+  return createClient(url, key);
+})();
 
 export async function verifyAdmin(req?: NextRequest) {
   const cookieStore = await cookies();

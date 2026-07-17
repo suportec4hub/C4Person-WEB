@@ -1,11 +1,14 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseAdmin = (() => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null as unknown as ReturnType<typeof createClient>;
+  return createClient(url, key);
+})();
 
 function verifySignature(body: string, signature: string, secret: string): boolean {
   const hmac = crypto.createHmac("sha256", secret).update(body).digest("hex");
