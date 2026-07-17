@@ -25,6 +25,7 @@ interface Transaction {
   transaction_date: string;
   created_at: string;
   recurrence?: "none" | "daily" | "weekly" | "monthly";
+  payment_source?: string[] | null;
 }
 
 interface Budget {
@@ -63,6 +64,7 @@ export default function FinancePage() {
   const [newType, setNewType] = useState<"in" | "out">("out");
   const [newCategory, setNewCategory] = useState("Outros");
   const [newRecurrence, setNewRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
+  const [newPaymentSources, setNewPaymentSources] = useState<string[]>(["Bolso (Salário)"]);
 
   const [savingsGoal, setSavingsGoal] = useState(0);
   const [showSavingsModal, setShowSavingsModal] = useState(false);
@@ -303,10 +305,11 @@ export default function FinancePage() {
       recurrence: newRecurrence,
       transaction_date: new Date().toISOString(),
       user_id: userId,
+      payment_source: newType === "out" && newPaymentSources.length > 0 ? newPaymentSources : null,
     };
 
     setShowModal(false);
-    setNewName(""); setNewAmount(""); setNewType("out"); setNewCategory("Outros"); setNewRecurrence("none");
+    setNewName(""); setNewAmount(""); setNewType("out"); setNewCategory("Outros"); setNewRecurrence("none"); setNewPaymentSources(["Bolso (Salário)"]);
 
     const { data, error } = await supabase.from("transactions").insert([payload]).select();
     if (data) {
@@ -437,6 +440,18 @@ export default function FinancePage() {
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2000);
     });
+  };
+
+  /* ── payment sources ── */
+  const paymentSources = useMemo(() => [
+    "Bolso (Salário)",
+    ...customIncCats.map(c => c.label),
+  ], [customIncCats]);
+
+  const togglePaymentSource = (src: string) => {
+    setNewPaymentSources(prev =>
+      prev.includes(src) ? prev.filter(s => s !== src) : [...prev, src]
+    );
   };
 
   /* ── add custom category ── */
@@ -956,6 +971,13 @@ export default function FinancePage() {
                         {{ daily: "Diária", weekly: "Semanal", monthly: "Mensal" }[t.recurrence]}
                       </span>
                     )}
+                    {t.type === "out" && t.payment_source && t.payment_source.length > 0 && (
+                      <span className="text-xs px-1.5 py-0.5 rounded-md border border-white/10 text-muted-foreground bg-white/5">
+                        {t.payment_source.length === 1
+                          ? t.payment_source[0]
+                          : `Misto (${t.payment_source.length})`}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span className={`text-sm font-bold flex-shrink-0 ${t.type === "in" ? "text-emerald-400" : "text-red-400"}`}>
@@ -1228,7 +1250,7 @@ export default function FinancePage() {
                 <div className="flex gap-3">
                   {(["out", "in"] as const).map(t => (
                     <button
-                      key={t} type="button" onClick={() => { setNewType(t); setNewCategory("Outros"); }}
+                      key={t} type="button" onClick={() => { setNewType(t); setNewCategory("Outros"); setNewPaymentSources(["Bolso (Salário)"]); }}
                       className={`flex-1 py-2 rounded-xl font-medium border text-sm transition-colors ${
                         newType === t
                           ? t === "in"
@@ -1308,6 +1330,44 @@ export default function FinancePage() {
                     )}
                   </div>
                 </div>
+
+                {/* Payment source — expense only */}
+                {newType === "out" && paymentSources.length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                      De onde sai o dinheiro?
+                      {newPaymentSources.length > 1 && (
+                        <span className="ml-2 text-xs text-primary font-normal">Misto selecionado</span>
+                      )}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {paymentSources.map(src => {
+                        const selected = newPaymentSources.includes(src);
+                        const isBolso  = src === "Bolso (Salário)";
+                        const color    = isBolso ? "#10b981" : (customIncCats.find(c => c.label === src)?.color ?? "#8b5cf6");
+                        return (
+                          <button
+                            key={src} type="button"
+                            onClick={() => togglePaymentSource(src)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-medium border transition-all"
+                            style={selected ? {
+                              backgroundColor: `${color}20`,
+                              borderColor: `${color}50`,
+                              color,
+                            } : {}}
+                            {...(!selected && { className: "px-3 py-1.5 rounded-xl text-xs font-medium border bg-background border-white/5 text-muted-foreground hover:bg-white/5 transition-all" })}
+                          >
+                            {isBolso ? "💵 " : "💳 "}{src}
+                            {selected && " ✓"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {newPaymentSources.length === 0 && (
+                      <p className="text-xs text-red-400 mt-1">Selecione ao menos uma fonte</p>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Repetição</label>
