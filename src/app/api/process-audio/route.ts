@@ -1,12 +1,14 @@
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 
 export const maxDuration = 60;
 
-const groq = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-});
+const groq = (() => {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) return null as unknown as OpenAI;
+  return new OpenAI({ apiKey: key, baseURL: "https://api.groq.com/openai/v1" });
+})();
 
 async function generateSummary(transcript: string) {
   // Estima duração aproximada com base no tamanho do texto (150 palavras/min em pt-BR)
