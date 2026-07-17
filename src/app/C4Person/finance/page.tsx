@@ -232,56 +232,247 @@ export default function FinancePage() {
 
   const exportPDF = () => {
     const monthLabel = format(viewMonth, "MMMM 'de' yyyy", { locale: ptBR });
-    const rows = filteredTx.map(t => `
+    const now = format(new Date(), "dd/MM/yyyy 'às' HH:mm");
+    const savingsRate = totalIn > 0 ? ((balance / totalIn) * 100).toFixed(1) : "0.0";
+
+    const catRows = categoryData.map(c => {
+      const pct = totalOut > 0 ? ((c.value / totalOut) * 100).toFixed(1) : "0";
+      return `<tr>
+        <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c.color};margin-right:7px;vertical-align:middle"></span>${c.label}</td>
+        <td style="text-align:right;font-weight:600;color:#ef4444">${fmt(c.value)}</td>
+        <td style="text-align:right;color:#888">${pct}%</td>
+        <td style="width:120px;padding-left:8px">
+          <div style="background:#f1f5f9;border-radius:4px;height:6px;overflow:hidden">
+            <div style="background:${c.color};height:100%;width:${pct}%;border-radius:4px"></div>
+          </div>
+        </td>
+      </tr>`;
+    }).join("");
+
+    const walletRows = walletBalances.map(w => `
       <tr>
-        <td>${t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : "—"}</td>
-        <td>${t.name}</td>
-        <td style="color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "Receita" : "Despesa"}</td>
-        <td>${t.category || "Outros"}</td>
-        <td style="text-align:right;color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "+" : "−"}${fmt(Number(t.amount))}</td>
+        <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${w.color};margin-right:7px;vertical-align:middle"></span>${w.label}</td>
+        <td style="text-align:right;color:#10b981">${fmt(w.received)}</td>
+        <td style="text-align:right;color:#ef4444">${fmt(w.spent)}</td>
+        <td style="text-align:right;font-weight:700;color:${w.balance >= 0 ? "#10b981" : "#ef4444"}">${fmt(w.balance)}</td>
       </tr>`).join("");
-    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
-      <title>C4Person — Relatório Financeiro</title>
-      <style>
-        body{font-family:sans-serif;color:#111;margin:2cm;font-size:12px}
-        h1{font-size:20px;margin-bottom:4px}
-        p.sub{color:#666;margin-bottom:16px}
-        table{width:100%;border-collapse:collapse}
-        th{background:#f4f4f4;text-align:left;padding:8px;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase}
-        td{padding:7px 8px;border-bottom:1px solid #eee;font-size:12px}
-        .totals{margin-top:16px;display:flex;gap:32px}
-        .total-box{padding:12px 16px;border:1px solid #eee;border-radius:6px;min-width:140px}
-        .total-box .label{font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px}
-        .total-box .value{font-size:18px;font-weight:700}
-        @media print{body{margin:1cm}}
-      </style></head><body>
-      <h1>Relatório Financeiro · C4Person</h1>
-      <p class="sub">Exportado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")} · ${monthLabel}</p>
+
+    const txRows = filteredTx.map((t, i) => {
+      const isIn = t.type === "in";
+      const bg = i % 2 === 0 ? "#ffffff" : "#f8fafc";
+      return `<tr style="background:${bg}">
+        <td style="color:#64748b">${t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM") : "—"}</td>
+        <td style="font-weight:500">${t.name}</td>
+        <td><span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;background:${isIn ? "#dcfce7" : "#fee2e2"};color:${isIn ? "#16a34a" : "#dc2626"}">${isIn ? "Receita" : "Despesa"}</span></td>
+        <td style="color:#64748b">${t.category || "Outros"}</td>
+        <td style="text-align:right;font-weight:700;color:${isIn ? "#10b981" : "#ef4444"}">${isIn ? "+" : "−"}${fmt(Number(t.amount))}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>C4Person — Relatório ${monthLabel}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;color:#1e293b;font-size:12px}
+  .page{max-width:900px;margin:0 auto;padding:32px 24px}
+
+  /* Header */
+  .header{background:linear-gradient(135deg,#1e293b 0%,#334155 100%);border-radius:16px;padding:28px 32px;color:#fff;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center}
+  .header-left h1{font-size:22px;font-weight:700;letter-spacing:-0.5px}
+  .header-left p{color:#94a3b8;margin-top:4px;font-size:12px}
+  .header-right{text-align:right}
+  .header-right .month{font-size:28px;font-weight:800;letter-spacing:-1px;text-transform:capitalize}
+  .header-right .exported{color:#94a3b8;font-size:11px;margin-top:4px}
+
+  /* KPI cards */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+  .kpi{background:#fff;border-radius:12px;padding:16px 18px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .kpi .kpi-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
+  .kpi .kpi-value{font-size:20px;font-weight:800;letter-spacing:-0.5px}
+  .kpi .kpi-sub{font-size:10px;color:#94a3b8;margin-top:4px}
+  .green{color:#10b981}
+  .red{color:#ef4444}
+  .blue{color:#3b82f6}
+
+  /* Section */
+  .section{background:#fff;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.04);margin-bottom:20px;overflow:hidden}
+  .section-header{padding:14px 20px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:8px}
+  .section-header h2{font-size:13px;font-weight:700;color:#1e293b}
+  .section-header .badge{font-size:10px;font-weight:600;background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:20px}
+  .section-body{padding:4px 0}
+
+  table{width:100%;border-collapse:collapse}
+  th{padding:10px 16px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;background:#f8fafc;border-bottom:1px solid #f1f5f9}
+  td{padding:9px 16px;font-size:12px;border-bottom:1px solid #f8fafc}
+  tr:last-child td{border-bottom:none}
+
+  /* Footer */
+  .footer{text-align:center;color:#94a3b8;font-size:10px;margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0}
+
+  @media print{
+    body{background:#fff}
+    .page{padding:16px}
+    .kpi-grid{grid-template-columns:repeat(4,1fr)}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Relatório Financeiro</h1>
+      <p>C4Person · Resumo do período</p>
+    </div>
+    <div class="header-right">
+      <div class="month">${monthLabel}</div>
+      <div class="exported">Gerado em ${now}</div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">Total Receitas</div>
+      <div class="kpi-value green">${fmt(totalIn)}</div>
+      <div class="kpi-sub">${filteredTx.filter(t=>t.type==="in").length} lançamento(s)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Total Despesas</div>
+      <div class="kpi-value red">${fmt(totalOut)}</div>
+      <div class="kpi-sub">${filteredTx.filter(t=>t.type==="out").length} lançamento(s)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Saldo do Mês</div>
+      <div class="kpi-value ${balance >= 0 ? "green" : "red"}">${fmt(balance)}</div>
+      <div class="kpi-sub">${balance >= 0 ? "Saldo positivo" : "Saldo negativo"}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Taxa de Poupança</div>
+      <div class="kpi-value blue">${savingsRate}%</div>
+      <div class="kpi-sub">da receita poupada</div>
+    </div>
+  </div>
+
+  ${categoryData.length > 0 ? `
+  <!-- Despesas por Categoria -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Despesas por Categoria</h2>
+      <span class="badge">${categoryData.length} categorias</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Categoria</th><th style="text-align:right">Valor</th><th style="text-align:right">% do total</th><th>Distribuição</th></tr></thead>
+        <tbody>${catRows}</tbody>
+      </table>
+    </div>
+  </div>` : ""}
+
+  ${walletBalances.length > 0 ? `
+  <!-- Saldo por Carteira -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Saldo por Carteira</h2>
+      <span class="badge">${walletBalances.length} carteira(s)</span>
+    </div>
+    <div class="section-body">
+      <table>
+        <thead><tr><th>Carteira</th><th style="text-align:right">Recebido</th><th style="text-align:right">Gasto</th><th style="text-align:right">Saldo</th></tr></thead>
+        <tbody>${walletRows}</tbody>
+      </table>
+    </div>
+  </div>` : ""}
+
+  <!-- Lançamentos -->
+  <div class="section">
+    <div class="section-header">
+      <h2>Lançamentos</h2>
+      <span class="badge">${filteredTx.length} itens</span>
+    </div>
+    <div class="section-body">
       <table>
         <thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th style="text-align:right">Valor</th></tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${txRows}</tbody>
       </table>
-      <div class="totals">
-        <div class="total-box"><div class="label">Total Receitas</div><div class="value" style="color:#10b981">${fmt(totalIn)}</div></div>
-        <div class="total-box"><div class="label">Total Despesas</div><div class="value" style="color:#ef4444">${fmt(totalOut)}</div></div>
-        <div class="total-box"><div class="label">Saldo</div><div class="value" style="color:${balance>=0?"#10b981":"#ef4444"}">${fmt(balance)}</div></div>
-      </div>
-      <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
-      </body></html>`;
+    </div>
+  </div>
+
+  <div class="footer">C4Person · Relatório gerado automaticamente · ${now}</div>
+</div>
+<script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
+</body>
+</html>`;
+
     const w = window.open("", "_blank");
     if (w) { w.document.write(html); w.document.close(); }
   };
 
   const exportCSV = () => {
-    const header = "Data,Descrição,Tipo,Categoria,Valor";
-    const rows = filteredTx.map(t =>
-      `${t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : ""},` +
-      `"${t.name.replace(/"/g, '""')}",` +
-      `${t.type === "in" ? "Receita" : "Despesa"},` +
-      `${t.category || "Outros"},` +
-      `${Number(t.amount).toFixed(2)}`
-    );
-    const csv = [header, ...rows].join("\n");
+    const monthLabel = format(viewMonth, "MMMM 'de' yyyy", { locale: ptBR });
+    const now = format(new Date(), "dd/MM/yyyy HH:mm");
+
+    const lines: string[] = [];
+
+    // Cabeçalho do relatório
+    lines.push(`"RELATÓRIO FINANCEIRO - C4Person"`);
+    lines.push(`"Período:","${monthLabel}"`);
+    lines.push(`"Exportado em:","${now}"`);
+    lines.push("");
+
+    // Resumo
+    lines.push(`"=== RESUMO ==="`);
+    lines.push(`"Total Receitas","${fmt(totalIn)}"`);
+    lines.push(`"Total Despesas","${fmt(totalOut)}"`);
+    lines.push(`"Saldo","${fmt(balance)}"`);
+    const savingsRate = totalIn > 0 ? ((balance / totalIn) * 100).toFixed(1) : "0.0";
+    lines.push(`"Taxa de Poupança","${savingsRate}%"`);
+    lines.push("");
+
+    // Categorias
+    if (categoryData.length > 0) {
+      lines.push(`"=== DESPESAS POR CATEGORIA ==="`);
+      lines.push(`"Categoria","Valor","% do Total"`);
+      categoryData.forEach(c => {
+        const pct = totalOut > 0 ? ((c.value / totalOut) * 100).toFixed(1) : "0";
+        lines.push(`"${c.label}","${fmt(c.value)}","${pct}%"`);
+      });
+      lines.push("");
+    }
+
+    // Carteiras
+    if (walletBalances.length > 0) {
+      lines.push(`"=== SALDO POR CARTEIRA ==="`);
+      lines.push(`"Carteira","Recebido","Gasto","Saldo"`);
+      walletBalances.forEach(w => {
+        lines.push(`"${w.label}","${fmt(w.received)}","${fmt(w.spent)}","${fmt(w.balance)}"`);
+      });
+      lines.push("");
+    }
+
+    // Lançamentos
+    lines.push(`"=== LANÇAMENTOS ==="`);
+    lines.push(`"Data","Descrição","Tipo","Categoria","Fontes de Pagamento","Valor"`);
+    filteredTx.forEach(t => {
+      const date = t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : "";
+      const type = t.type === "in" ? "Receita" : "Despesa";
+      const sources = Array.isArray(t.payment_source) ? t.payment_source.join(" + ") : "";
+      const signal = t.type === "in" ? "+" : "-";
+      lines.push(
+        `"${date}",` +
+        `"${t.name.replace(/"/g, '""')}",` +
+        `"${type}",` +
+        `"${t.category || "Outros"}",` +
+        `"${sources}",` +
+        `"${signal}${Number(t.amount).toFixed(2).replace(".", ",")}"`
+      );
+    });
+
+    const csv = "﻿" + lines.join("\n"); // BOM para Excel abrir UTF-8 corretamente
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
