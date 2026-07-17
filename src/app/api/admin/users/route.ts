@@ -24,5 +24,5 @@ export async function GET() {
     subscription: subMap[u.id] ?? null,
   }));
 
-  return NextResponse.json({ users });
+  return NextResponse.json({ users, currentUserId: admin.id });
 }
