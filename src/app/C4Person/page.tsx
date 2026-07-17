@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { SkeletonPage } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
@@ -754,6 +755,24 @@ export default function Dashboard() {
   const otherTasks = topPriorityTask ? tasks.filter(t => t.id !== topPriorityTask.id) : tasks;
   const upcomingEvents = tasks.filter(t => t.time && t.time !== "Livre" && !t.is_done).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
+  // ── Quick stats ──────────────────────────────────────────────────
+  const tasksDone = tasks.filter(t => t.is_done).length;
+  const habitsDone = habits.filter(h => h.is_completed_today).length;
+  const bestStreak = habits.length > 0 ? Math.max(...habits.map(h => h.streak || 0)) : 0;
+  const savingsRate = totalIn > 0 ? Math.round((totalBalance / totalIn) * 100) : 0;
+
+  // ── Mini 7-day chart ─────────────────────────────────────────────
+  const last7Days = useMemo(() => Array.from({ length: 7 }, (_, i) => {
+    const d = subDays(new Date(), 6 - i);
+    const ds = d.toISOString().slice(0, 10);
+    return {
+      label: format(d, 'EEE', { locale: ptBR }),
+      income:  transactions.filter(t => t.type === 'in'  && (t.transaction_date || '').slice(0, 10) === ds).reduce((s, t) => s + Number(t.amount), 0),
+      expense: transactions.filter(t => t.type === 'out' && (t.transaction_date || '').slice(0, 10) === ds).reduce((s, t) => s + Number(t.amount), 0),
+    };
+  }), [transactions]);
+  const maxDay = Math.max(...last7Days.flatMap(d => [d.income, d.expense]), 1);
+
   if (!mounted) return null;
   if (loading) return <SkeletonPage />;
 
@@ -800,6 +819,72 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {/* ── Quick Stats Strip ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {/* Tarefas */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+            className="glass-card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+              <ListChecks size={18} className="text-primary" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted-foreground mb-0.5">Tarefas</p>
+              <p className="text-xl font-bold leading-none">
+                {tasksDone}<span className="text-sm font-normal text-muted-foreground">/{tasks.length}</span>
+              </p>
+              <div className="mt-1.5 h-1 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full transition-all duration-700"
+                  style={{ width: tasks.length > 0 ? `${(tasksDone / tasks.length) * 100}%` : '0%' }} />
+              </div>
+            </div>
+          </motion.div>
+          {/* Hábitos */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+            className="glass-card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 flex items-center justify-center shrink-0">
+              <Flame size={18} className="text-orange-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted-foreground mb-0.5">Hábitos</p>
+              <p className="text-xl font-bold leading-none">
+                {habitsDone}<span className="text-sm font-normal text-muted-foreground">/{habits.length}</span>
+              </p>
+              <div className="mt-1.5 h-1 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full bg-orange-400 rounded-full transition-all duration-700"
+                  style={{ width: habits.length > 0 ? `${(habitsDone / habits.length) * 100}%` : '0%' }} />
+              </div>
+            </div>
+          </motion.div>
+          {/* Sequência */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+            className="glass-card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-yellow-500/15 flex items-center justify-center shrink-0">
+              <Flame size={18} className="text-yellow-400" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground mb-0.5">Melhor Streak</p>
+              <p className="text-xl font-bold leading-none">
+                {bestStreak}<span className="text-sm font-normal text-muted-foreground"> dias</span>
+              </p>
+              <p className="text-xs text-yellow-500/70 mt-1">sequência atual</p>
+            </div>
+          </motion.div>
+          {/* Saldo */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+            className="glass-card p-4 flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${totalBalance >= 0 ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
+              <Wallet size={18} className={totalBalance >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground mb-0.5">Saldo</p>
+              <p className={`text-lg font-bold leading-none truncate ${totalBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {formatCurrency(totalBalance)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">{savingsRate}% poupança</p>
+            </div>
+          </motion.div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
           {/* Foco Principal */}
           <motion.section 
@@ -809,11 +894,26 @@ export default function Dashboard() {
             className="col-span-1 lg:col-span-8 glass-card p-4 md:p-6 flex flex-col relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none"><Target size={120} /></div>
-            <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-              <Target size={20} className="text-primary" />
-              Foco do Dia
-            </h3>
-            
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Target size={20} className="text-primary" />
+                Foco do Dia
+              </h3>
+              {tasks.length > 0 && (
+                <span className="text-xs text-muted-foreground">{tasksDone}/{tasks.length} concluídas</span>
+              )}
+            </div>
+            {tasks.length > 0 && (
+              <div className="mb-5 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(tasksDone / tasks.length) * 100}%` }}
+                  transition={{ duration: 0.8, delay: 0.3 }}
+                />
+              </div>
+            )}
+
             {topPriorityTask ? (
               <div onClick={() => toggleTask(topPriorityTask.id, topPriorityTask.is_done)} className={`bg-background/50 border border-white/5 rounded-xl p-5 mb-6 flex items-start gap-4 group cursor-pointer hover:border-primary/50 transition-all relative z-10 ${topPriorityTask.is_done ? 'opacity-50' : ''}`}>
                 <button className={`mt-1 transition-colors ${topPriorityTask.is_done ? 'text-accent' : 'text-muted-foreground group-hover:text-primary'}`}>
@@ -881,9 +981,24 @@ export default function Dashboard() {
                   <Flame size={20} className="text-orange-500" />
                   Hábitos
                 </h3>
-                <span className="text-xs font-medium text-orange-500 bg-orange-500/10 px-2 py-1 rounded-md border border-orange-500/20">
-                  Lvl {Math.floor(habits.reduce((acc, h) => acc + (h.streak || 0), 0) / 7) + 1}
-                </span>
+                <div className="flex items-center gap-2">
+                  {habits.length > 0 && (
+                    <div className="relative w-9 h-9">
+                      <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
+                        <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
+                        <circle cx="18" cy="18" r="14" fill="none" stroke="#f97316" strokeWidth="3"
+                          strokeDasharray={`${(habitsDone / habits.length) * 87.96} 87.96`}
+                          strokeLinecap="round" className="transition-all duration-700" />
+                      </svg>
+                      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-orange-400">
+                        {habitsDone}/{habits.length}
+                      </span>
+                    </div>
+                  )}
+                  <span className="text-xs font-medium text-orange-500 bg-orange-500/10 px-2 py-1 rounded-md border border-orange-500/20">
+                    Lvl {Math.floor(habits.reduce((acc, h) => acc + (h.streak || 0), 0) / 7) + 1}
+                  </span>
+                </div>
               </div>
               
               <div className="space-y-4">
@@ -967,7 +1082,7 @@ export default function Dashboard() {
               <Wallet size={20} className="text-emerald-400" />
               Visão Financeira
             </h3>
-            <button className="text-xs font-medium text-muted-foreground hover:text-white transition-colors">Ver Relatório Completo</button>
+            <Link href="/C4Person/finance" className="text-xs font-medium text-muted-foreground hover:text-white transition-colors">Ver Relatório Completo →</Link>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-10">
@@ -981,30 +1096,40 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Receitas vs Despesas */}
-            <div className="bg-background/40 border border-white/5 rounded-2xl p-5 flex flex-col justify-center gap-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                    <ArrowUpRight size={20} />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Receitas</p>
-                    <p className="text-sm font-bold text-white">{formatCurrency(totalIn)}</p>
-                  </div>
+            {/* Mini gráfico 7 dias */}
+            <div className="bg-background/40 border border-white/5 rounded-2xl p-5 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-muted-foreground text-sm font-medium">Últimos 7 dias</p>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Receita</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500/70 inline-block" />Despesa</span>
                 </div>
               </div>
-              <div className="h-[1px] w-full bg-white/5" />
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center text-red-400">
-                    <ArrowDownRight size={20} />
+              <div className="flex items-end gap-1.5 flex-1 min-h-[64px]">
+                {last7Days.map((d, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                    <div className="w-full flex flex-col justify-end gap-0.5" style={{ height: 64 }}>
+                      {d.income > 0 && (
+                        <div className="w-full rounded-t-sm bg-emerald-500/60 hover:bg-emerald-500/80 transition-colors"
+                          style={{ height: `${(d.income / maxDay) * 100}%`, minHeight: 3 }}
+                          title={`Receita: ${formatCurrency(d.income)}`} />
+                      )}
+                      {d.expense > 0 && (
+                        <div className="w-full rounded-t-sm bg-red-500/60 hover:bg-red-500/80 transition-colors"
+                          style={{ height: `${(d.expense / maxDay) * 100}%`, minHeight: 3 }}
+                          title={`Despesa: ${formatCurrency(d.expense)}`} />
+                      )}
+                      {d.income === 0 && d.expense === 0 && (
+                        <div className="w-full rounded-t-sm bg-white/5" style={{ height: 3 }} />
+                      )}
+                    </div>
+                    <span className="text-[9px] text-muted-foreground capitalize">{d.label}</span>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Despesas</p>
-                    <p className="text-sm font-bold text-white">{formatCurrency(totalOut)}</p>
-                  </div>
-                </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-white/5 flex justify-between text-xs">
+                <span className="flex items-center gap-1 text-emerald-400"><ArrowUpRight size={12} />{formatCurrency(totalIn)}</span>
+                <span className="flex items-center gap-1 text-red-400"><ArrowDownRight size={12} />{formatCurrency(totalOut)}</span>
               </div>
             </div>
 
