@@ -4,12 +4,13 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { SkeletonPage } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
-import { format, subMonths, startOfMonth, endOfMonth } from "date-fns";
+import { format, subMonths, startOfMonth, endOfMonth, addMonths, isSameMonth, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
   TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target, Download,
+  ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
@@ -28,6 +29,13 @@ interface Budget {
   id: string;
   category: string;
   monthly_limit: number;
+}
+
+interface Profile {
+  salary_mode: "full" | "split";
+  salary_amount: number;
+  invite_code: string | null;
+  partner_id: string | null;
 }
 
 export default function FinancePage() {
@@ -57,6 +65,18 @@ export default function FinancePage() {
   const [showSavingsModal, setShowSavingsModal] = useState(false);
   const [savingsInput, setSavingsInput] = useState("");
 
+  /* ── month navigation ── */
+  const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
+
+  /* ── profile / salary / partner ── */
+  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, invite_code: null, partner_id: null });
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingSalaryMode, setSettingSalaryMode] = useState<"full" | "split">("full");
+  const [settingSalaryAmount, setSettingSalaryAmount] = useState("");
+  const [partnerCodeInput, setPartnerCodeInput] = useState("");
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [partnerLoading, setPartnerLoading] = useState(false);
+
   const fetchData = useCallback(async () => {
     const [txRes, budRes] = await Promise.all([
       supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
@@ -66,12 +86,109 @@ export default function FinancePage() {
     if (budRes.data) setBudgets(budRes.data as Budget[]);
   }, []);
 
+  const fetchProfile = useCallback(async (uid: string) => {
+    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,invite_code,partner_id").eq("id", uid).single();
+    if (data) setProfile(data as Profile);
+  }, []);
+
+  /* ── derived: transactions filtered to viewMonth ── */
+  const monthlyTx = useMemo(() =>
+    transactions.filter(t => {
+      if (!t.transaction_date) return false;
+      try { return isSameMonth(parseISO(t.transaction_date), viewMonth); } catch { return false; }
+    }),
+    [transactions, viewMonth]
+  );
+
+  const totalIn  = useMemo(() => monthlyTx.filter(t => t.type === "in").reduce((s, t) => s + Number(t.amount), 0), [monthlyTx]);
+  const totalOut = useMemo(() => monthlyTx.filter(t => t.type === "out").reduce((s, t) => s + Number(t.amount), 0), [monthlyTx]);
+  const balance  = totalIn - totalOut;
+  const savingsRate = totalIn > 0 ? Math.max(0, Math.round(((totalIn - totalOut) / totalIn) * 100)) : 0;
+
+  /* ── monthly data (last 6 months) — always all-time for the bar chart ── */
+  const monthlyData = useMemo(() => {
+    return Array.from({ length: 6 }, (_, i) => {
+      const d = subMonths(new Date(), 5 - i);
+      const key = format(d, "yyyy-MM");
+      const month = transactions.filter(t =>
+        t.transaction_date && format(parseISO(t.transaction_date), "yyyy-MM") === key
+      );
+      return {
+        label: format(d, "MMM", { locale: ptBR }),
+        income:   month.filter(t => t.type === "in").reduce((s, t) => s + Number(t.amount), 0),
+        expenses: month.filter(t => t.type === "out").reduce((s, t) => s + Number(t.amount), 0),
+      };
+    });
+  }, [transactions]);
+
+  const maxMonthly = useMemo(
+    () => Math.max(...monthlyData.flatMap(m => [m.income, m.expenses]), 1),
+    [monthlyData]
+  );
+
+  /* ── category breakdown — filtered to viewMonth ── */
+  const categoryData = useMemo(() => {
+    const exp = monthlyTx.filter(t => t.type === "out");
+    const bycat = exp.reduce<Record<string, number>>((acc, t) => {
+      const cat = t.category || "Outros";
+      acc[cat] = (acc[cat] || 0) + Number(t.amount);
+      return acc;
+    }, {});
+    return Object.entries(bycat)
+      .map(([label, value]) => ({ label, value, color: getCategoryColor(label) }))
+      .sort((a, b) => b.value - a.value);
+  }, [monthlyTx]);
+
+  const conicGradient = useMemo(() => {
+    if (categoryData.length === 0) return "conic-gradient(#27272a 0% 100%)";
+    const total = categoryData.reduce((s, d) => s + d.value, 0);
+    let cur = 0;
+    const segs = categoryData.map(d => {
+      const pct = (d.value / total) * 100;
+      const seg = `${d.color} ${cur.toFixed(2)}% ${(cur + pct).toFixed(2)}%`;
+      cur += pct;
+      return seg;
+    });
+    return `conic-gradient(${segs.join(", ")})`;
+  }, [categoryData]);
+
+  /* ── filtered list — also filtered to viewMonth ── */
+  const filteredTx = useMemo(() => {
+    return monthlyTx.filter(t => {
+      const matchSearch = t.name.toLowerCase().includes(search.toLowerCase());
+      const matchType = filterType === "all" || t.type === filterType;
+      return matchSearch && matchType;
+    });
+  }, [monthlyTx, search, filterType]);
+
+  /* ── budget spend for viewMonth ── */
+  const spentByCategory = useMemo(() => {
+    const start = startOfMonth(viewMonth).toISOString();
+    const end   = endOfMonth(viewMonth).toISOString();
+    return transactions
+      .filter(t => t.type === "out" && t.transaction_date >= start && t.transaction_date <= end)
+      .reduce<Record<string, number>>((acc, t) => {
+        const cat = t.category || "Outros";
+        acc[cat] = (acc[cat] || 0) + Number(t.amount);
+        return acc;
+      }, {});
+  }, [transactions, viewMonth]);
+
+  /* ── salary schedule banner ── */
+  const isCurrentMonth = isSameMonth(viewMonth, new Date());
+  const today = new Date().getDate();
+  const salaryBannerVisible = isCurrentMonth && profile.salary_amount > 0;
+  const salaryDay5 = profile.salary_mode === "split" ? profile.salary_amount * 0.5 : profile.salary_amount;
+  const salaryDay15 = profile.salary_mode === "split" ? profile.salary_amount * 0.5 : 0;
+
+  const fmt = (v: number) =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+
   const exportPDF = () => {
-    // Reuse the component-level fmt and the already-memoised totalIn/totalOut
-    const currentMonth = format(new Date(), "MMMM 'de' yyyy", { locale: ptBR });
-    const rows = transactions.map(t => `
+    const monthLabel = format(viewMonth, "MMMM 'de' yyyy", { locale: ptBR });
+    const rows = filteredTx.map(t => `
       <tr>
-        <td>${t.transaction_date ? format(new Date(t.transaction_date), "dd/MM/yyyy") : "—"}</td>
+        <td>${t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : "—"}</td>
         <td>${t.name}</td>
         <td style="color:${t.type === "in" ? "#10b981" : "#ef4444"}">${t.type === "in" ? "Receita" : "Despesa"}</td>
         <td>${t.category || "Outros"}</td>
@@ -93,7 +210,7 @@ export default function FinancePage() {
         @media print{body{margin:1cm}}
       </style></head><body>
       <h1>Relatório Financeiro · C4Person</h1>
-      <p class="sub">Exportado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")} · ${currentMonth}</p>
+      <p class="sub">Exportado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")} · ${monthLabel}</p>
       <table>
         <thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Categoria</th><th style="text-align:right">Valor</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -111,8 +228,8 @@ export default function FinancePage() {
 
   const exportCSV = () => {
     const header = "Data,Descrição,Tipo,Categoria,Valor";
-    const rows = transactions.map(t =>
-      `${t.transaction_date ? format(new Date(t.transaction_date), "dd/MM/yyyy") : ""},` +
+    const rows = filteredTx.map(t =>
+      `${t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM/yyyy") : ""},` +
       `"${t.name.replace(/"/g, '""')}",` +
       `${t.type === "in" ? "Receita" : "Despesa"},` +
       `${t.category || "Outros"},` +
@@ -123,14 +240,19 @@ export default function FinancePage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `financas_${format(new Date(), "yyyy-MM")}.csv`;
+    a.download = `financas_${format(viewMonth, "yyyy-MM")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
     setMounted(true);
-    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id); });
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserId(user.id);
+        fetchProfile(user.id);
+      }
+    });
     fetchData().finally(() => setLoading(false));
     try {
       const stored = localStorage.getItem("c4person_savings_goal");
@@ -146,69 +268,7 @@ export default function FinancePage() {
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "budgets" }, (p) => setBudgets(prev => prev.filter(b => b.id !== p.old.id)))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [fetchData]);
-
-  /* ── derived totals ── */
-  const totalIn  = useMemo(() => transactions.filter(t => t.type === "in").reduce((s, t) => s + Number(t.amount), 0), [transactions]);
-  const totalOut = useMemo(() => transactions.filter(t => t.type === "out").reduce((s, t) => s + Number(t.amount), 0), [transactions]);
-  const balance  = totalIn - totalOut;
-  const savingsRate = totalIn > 0 ? Math.max(0, Math.round(((totalIn - totalOut) / totalIn) * 100)) : 0;
-
-  /* ── monthly data (last 6 months) ── */
-  const monthlyData = useMemo(() => {
-    return Array.from({ length: 6 }, (_, i) => {
-      const d = subMonths(new Date(), 5 - i);
-      const key = format(d, "yyyy-MM");
-      const month = transactions.filter(t =>
-        t.transaction_date && format(new Date(t.transaction_date), "yyyy-MM") === key
-      );
-      return {
-        label: format(d, "MMM", { locale: ptBR }),
-        income:   month.filter(t => t.type === "in").reduce((s, t) => s + Number(t.amount), 0),
-        expenses: month.filter(t => t.type === "out").reduce((s, t) => s + Number(t.amount), 0),
-      };
-    });
-  }, [transactions]);
-
-  const maxMonthly = useMemo(
-    () => Math.max(...monthlyData.flatMap(m => [m.income, m.expenses]), 1),
-    [monthlyData]
-  );
-
-  /* ── category breakdown (expenses only) ── */
-  const categoryData = useMemo(() => {
-    const exp = transactions.filter(t => t.type === "out");
-    const bycat = exp.reduce<Record<string, number>>((acc, t) => {
-      const cat = t.category || "Outros";
-      acc[cat] = (acc[cat] || 0) + Number(t.amount);
-      return acc;
-    }, {});
-    return Object.entries(bycat)
-      .map(([label, value]) => ({ label, value, color: getCategoryColor(label) }))
-      .sort((a, b) => b.value - a.value);
-  }, [transactions]);
-
-  const conicGradient = useMemo(() => {
-    if (categoryData.length === 0) return "conic-gradient(#27272a 0% 100%)";
-    const total = categoryData.reduce((s, d) => s + d.value, 0);
-    let cur = 0;
-    const segs = categoryData.map(d => {
-      const pct = (d.value / total) * 100;
-      const seg = `${d.color} ${cur.toFixed(2)}% ${(cur + pct).toFixed(2)}%`;
-      cur += pct;
-      return seg;
-    });
-    return `conic-gradient(${segs.join(", ")})`;
-  }, [categoryData]);
-
-  /* ── filtered list ── */
-  const filteredTx = useMemo(() => {
-    return transactions.filter(t => {
-      const matchSearch = t.name.toLowerCase().includes(search.toLowerCase());
-      const matchType = filterType === "all" || t.type === filterType;
-      return matchSearch && matchType;
-    });
-  }, [transactions, search, filterType]);
+  }, [fetchData, fetchProfile]);
 
   /* ── handlers ── */
   const handleAdd = async (e: React.FormEvent) => {
@@ -233,7 +293,6 @@ export default function FinancePage() {
     if (data) {
       setTransactions(prev => [data[0] as Transaction, ...prev]);
     } else if (error?.message?.includes("category")) {
-      // Fallback: retry without category (keeps recurrence and other fields)
       const { data: d2 } = await supabase
         .from("transactions")
         .insert([{ name: payload.name, amount, type: payload.type, recurrence: payload.recurrence, transaction_date: payload.transaction_date, user_id: userId }])
@@ -257,20 +316,6 @@ export default function FinancePage() {
       supabase.from("transactions").insert([item]);
     });
   };
-
-  /* ── budget spend this month ── */
-  const spentByCategory = useMemo(() => {
-    const now = new Date();
-    const start = startOfMonth(now).toISOString();
-    const end   = endOfMonth(now).toISOString();
-    return transactions
-      .filter(t => t.type === "out" && t.transaction_date >= start && t.transaction_date <= end)
-      .reduce<Record<string, number>>((acc, t) => {
-        const cat = t.category || "Outros";
-        acc[cat] = (acc[cat] || 0) + Number(t.amount);
-        return acc;
-      }, {});
-  }, [transactions]);
 
   const addBudget = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,13 +348,81 @@ export default function FinancePage() {
     await supabase.from("budgets").delete().eq("id", id);
   };
 
-  const fmt = (v: number) =>
-    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+  /* ── quick-add salary installment ── */
+  const addSalaryTx = async (amount: number, label: string) => {
+    const payload = {
+      name: label,
+      amount,
+      type: "in" as const,
+      category: "Salário",
+      recurrence: "none" as const,
+      transaction_date: new Date().toISOString(),
+      user_id: userId,
+    };
+    const { data } = await supabase.from("transactions").insert([payload]).select();
+    if (data) setTransactions(prev => [data[0] as Transaction, ...prev]);
+  };
+
+  /* ── settings save ── */
+  const saveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(settingSalaryAmount.replace(",", "."));
+    const updates: Partial<Profile> = {
+      salary_mode: settingSalaryMode,
+      salary_amount: isNaN(amount) ? 0 : amount,
+    };
+    await supabase.from("profiles").update(updates).eq("id", userId);
+    setProfile(prev => ({ ...prev, ...updates }));
+    setShowSettings(false);
+  };
+
+  /* ── partner connection ── */
+  const connectPartner = async () => {
+    if (!partnerCodeInput.trim()) return;
+    setPartnerLoading(true);
+    const { data: partnerProfile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("invite_code", partnerCodeInput.trim().toUpperCase())
+      .single();
+
+    if (!partnerProfile) {
+      setPartnerLoading(false);
+      alert("Código não encontrado. Verifique e tente novamente.");
+      return;
+    }
+
+    await Promise.all([
+      supabase.from("profiles").update({ partner_id: partnerProfile.id }).eq("id", userId),
+      supabase.from("profiles").update({ partner_id: userId }).eq("id", partnerProfile.id),
+    ]);
+
+    setProfile(prev => ({ ...prev, partner_id: partnerProfile.id }));
+    setPartnerLoading(false);
+    setShowSettings(false);
+  };
+
+  const disconnectPartner = async () => {
+    if (profile.partner_id) {
+      await supabase.from("profiles").update({ partner_id: null }).eq("id", profile.partner_id);
+    }
+    await supabase.from("profiles").update({ partner_id: null }).eq("id", userId);
+    setProfile(prev => ({ ...prev, partner_id: null }));
+  };
+
+  const copyInviteCode = () => {
+    if (!profile.invite_code) return;
+    navigator.clipboard.writeText(profile.invite_code).then(() => {
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    });
+  };
 
   if (!mounted) return null;
   if (loading) return <SkeletonPage />;
 
   const categories = newType === "in" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const isThisMonth = isSameMonth(viewMonth, new Date());
 
   return (
     <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 relative">
@@ -321,10 +434,53 @@ export default function FinancePage() {
         className="mb-6 md:mb-10 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end"
       >
         <div>
-          <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Nectar</h2>
-          <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Visão Financeira</h1>
+          <div className="flex items-center gap-2 mb-1">
+            <CalendarDays size={14} className="text-muted-foreground" />
+            <span className="text-muted-foreground text-xs md:text-sm font-medium uppercase tracking-wider">
+              Visão Financeira
+            </span>
+            {profile.partner_id && (
+              <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <Users size={10} /> Conta Conjunta
+              </span>
+            )}
+          </div>
+          {/* Month navigation */}
+          <div className="flex items-center gap-3 mt-1">
+            <button
+              onClick={() => setViewMonth(m => startOfMonth(addMonths(m, -1)))}
+              className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-muted-foreground hover:text-white transition-all"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight capitalize">
+              {format(viewMonth, "MMMM yyyy", { locale: ptBR })}
+            </h1>
+            <button
+              onClick={() => setViewMonth(m => startOfMonth(addMonths(m, 1)))}
+              disabled={isThisMonth}
+              className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-muted-foreground hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronRight size={14} />
+            </button>
+            {!isThisMonth && (
+              <button
+                onClick={() => setViewMonth(startOfMonth(new Date()))}
+                className="text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+              >
+                Hoje
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => { setSettingSalaryMode(profile.salary_mode); setSettingSalaryAmount(profile.salary_amount > 0 ? profile.salary_amount.toString() : ""); setShowSettings(true); }}
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
+            title="Configurações Financeiras"
+          >
+            <Settings size={16} />
+          </button>
           <button
             onClick={exportPDF}
             className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
@@ -349,11 +505,62 @@ export default function FinancePage() {
         </div>
       </motion.header>
 
+      {/* Salary banner */}
+      <AnimatePresence>
+        {salaryBannerVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className="mb-6 p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 flex flex-col sm:flex-row sm:items-center gap-3"
+          >
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-emerald-400 flex items-center gap-1.5">
+                💰 Salário de {format(viewMonth, "MMMM", { locale: ptBR })}
+              </p>
+              {profile.salary_mode === "full" ? (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {fmt(profile.salary_amount)} · pagamento único até dia 5
+                  {today <= 5 ? " (ainda não registrado?)" : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Parcela 1 (dia 5): {fmt(salaryDay5)} · Parcela 2 (dia 15): {fmt(salaryDay15)}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {profile.salary_mode === "full" ? (
+                <button
+                  onClick={() => addSalaryTx(profile.salary_amount, "Salário")}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                >
+                  + Registrar {fmt(profile.salary_amount)}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => addSalaryTx(salaryDay5, "Salário (1ª parcela)")}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                  >
+                    + 1ª {fmt(salaryDay5)}
+                  </button>
+                  <button
+                    onClick={() => addSalaryTx(salaryDay15, "Salário (2ª parcela)")}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                  >
+                    + 2ª {fmt(salaryDay15)}
+                  </button>
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {[
           {
-            label: "Saldo Total", value: fmt(balance), icon: Wallet,
+            label: "Saldo do Mês", value: fmt(balance), icon: Wallet,
             color: balance >= 0 ? "text-white" : "text-red-400",
             bg: "bg-white/5", iconColor: "text-emerald-400",
             sub: balance >= 0 ? "Positivo" : "Negativo",
@@ -363,13 +570,13 @@ export default function FinancePage() {
           {
             label: "Receitas", value: fmt(totalIn), icon: ArrowUpRight,
             color: "text-emerald-400", bg: "bg-emerald-500/10", iconColor: "text-emerald-400",
-            sub: `${transactions.filter(t => t.type === "in").length} entradas`,
+            sub: `${monthlyTx.filter(t => t.type === "in").length} entrada${monthlyTx.filter(t => t.type === "in").length !== 1 ? "s" : ""}`,
             subColor: "text-muted-foreground", TrendIcon: ArrowUpRight,
           },
           {
             label: "Despesas", value: fmt(totalOut), icon: ArrowDownRight,
             color: "text-red-400", bg: "bg-red-500/10", iconColor: "text-red-400",
-            sub: `${transactions.filter(t => t.type === "out").length} saídas`,
+            sub: `${monthlyTx.filter(t => t.type === "out").length} saída${monthlyTx.filter(t => t.type === "out").length !== 1 ? "s" : ""}`,
             subColor: "text-muted-foreground", TrendIcon: ArrowDownRight,
           },
           {
@@ -413,11 +620,10 @@ export default function FinancePage() {
           </h3>
           {categoryData.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm">
-              Nenhuma despesa registrada.
+              Nenhuma despesa em {format(viewMonth, "MMMM", { locale: ptBR })}.
             </div>
           ) : (
             <div className="flex items-center gap-6">
-              {/* Donut */}
               <div className="relative flex-shrink-0">
                 <div
                   className="w-28 h-28 rounded-full"
@@ -427,7 +633,6 @@ export default function FinancePage() {
                   <span className="text-xs font-bold text-white">{fmt(totalOut)}</span>
                 </div>
               </div>
-              {/* Legend */}
               <div className="flex flex-col gap-2 min-w-0">
                 {categoryData.slice(0, 5).map(d => (
                   <div key={d.label} className="flex items-center gap-2 min-w-0">
@@ -626,7 +831,7 @@ export default function FinancePage() {
             <Search size={15} className="text-muted-foreground flex-shrink-0" />
             <input
               type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar transações…"
+              placeholder={`Buscar em ${format(viewMonth, "MMMM", { locale: ptBR })}…`}
               className="flex-1 bg-transparent text-sm text-white placeholder:text-muted-foreground outline-none"
             />
           </div>
@@ -652,9 +857,12 @@ export default function FinancePage() {
         </div>
 
         {filteredTx.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic text-center py-8">
-            {search ? "Nenhuma transação encontrada." : "Nenhuma transação registrada."}
-          </p>
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Wallet size={32} className="text-muted-foreground/30 mb-3" />
+            <p className="text-sm text-muted-foreground">
+              {search ? "Nenhuma transação encontrada." : `Nenhuma transação em ${format(viewMonth, "MMMM yyyy", { locale: ptBR })}.`}
+            </p>
+          </div>
         ) : (
           <div className="divide-y divide-white/5">
             {filteredTx.map(t => (
@@ -673,7 +881,7 @@ export default function FinancePage() {
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs text-muted-foreground">
                       {t.transaction_date
-                        ? format(new Date(t.transaction_date), "d 'de' MMM", { locale: ptBR })
+                        ? format(parseISO(t.transaction_date), "d 'de' MMM", { locale: ptBR })
                         : "—"}
                     </span>
                     {t.category && (
@@ -709,6 +917,147 @@ export default function FinancePage() {
           </div>
         )}
       </motion.div>
+
+      {/* ── Modals ── */}
+
+      {/* Settings modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowSettings(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+              className="bg-card border border-white/10 p-8 rounded-3xl w-full max-w-md shadow-2xl relative overflow-y-auto max-h-[90vh]"
+            >
+              <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-white transition-colors">
+                <X size={22} />
+              </button>
+              <h2 className="text-xl font-bold mb-1 text-white flex items-center gap-2">
+                <Settings size={20} className="text-primary" />
+                Configurações Financeiras
+              </h2>
+              <p className="text-xs text-muted-foreground mb-6">Salário e conta conjunta com parceiro(a)</p>
+
+              {/* Salary settings */}
+              <form onSubmit={saveSettings} className="flex flex-col gap-5 mb-6">
+                <div>
+                  <label className="text-sm font-medium text-white mb-3 block">Modo de recebimento do salário</label>
+                  <div className="flex gap-3">
+                    {(["full", "split"] as const).map(m => (
+                      <button
+                        key={m} type="button" onClick={() => setSettingSalaryMode(m)}
+                        className={`flex-1 py-3 rounded-xl text-sm font-medium border transition-all ${
+                          settingSalaryMode === m
+                            ? "bg-primary/20 text-primary border-primary/50"
+                            : "bg-background border-white/5 text-muted-foreground hover:bg-white/5"
+                        }`}
+                      >
+                        <div className="font-semibold">{m === "full" ? "Integral" : "Dividido"}</div>
+                        <div className="text-[10px] opacity-70 mt-0.5">
+                          {m === "full" ? "100% até dia 5" : "50% dia 5 + 50% dia 15"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Valor do salário (R$)</label>
+                  <input
+                    type="number" step="0.01" value={settingSalaryAmount}
+                    onChange={e => setSettingSalaryAmount(e.target.value)}
+                    placeholder="Ex: 5000"
+                    className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                  {settingSalaryMode === "split" && settingSalaryAmount && !isNaN(parseFloat(settingSalaryAmount)) && (
+                    <p className="text-xs text-emerald-400 mt-1.5">
+                      1ª parcela: {fmt(parseFloat(settingSalaryAmount) * 0.5)} · 2ª parcela: {fmt(parseFloat(settingSalaryAmount) * 0.5)}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl font-medium bg-primary hover:bg-primary/90 text-white transition-colors"
+                >
+                  Salvar configurações
+                </button>
+              </form>
+
+              {/* Partner / shared finance */}
+              <div className="border-t border-white/10 pt-6">
+                <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+                  <Users size={16} className="text-emerald-400" />
+                  Conta Conjunta
+                </h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Compartilhe as finanças com seu(sua) parceiro(a). Ambos verão as mesmas transações.
+                </p>
+
+                {profile.partner_id ? (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users size={16} className="text-emerald-400" />
+                      <span className="text-sm text-emerald-400 font-medium">Conta conjunta ativa</span>
+                    </div>
+                    <button
+                      onClick={disconnectPartner}
+                      className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      Desconectar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {/* Your invite code */}
+                    {profile.invite_code && (
+                      <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                        <p className="text-xs text-muted-foreground mb-2">Seu código de convite:</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-lg font-mono font-bold text-white tracking-widest">{profile.invite_code}</span>
+                          <button
+                            onClick={copyInviteCode}
+                            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                              copiedCode
+                                ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400"
+                                : "bg-white/5 border-white/10 text-muted-foreground hover:text-white hover:bg-white/10"
+                            }`}
+                          >
+                            {copiedCode ? <Check size={12} /> : <Copy size={12} />}
+                            {copiedCode ? "Copiado!" : "Copiar"}
+                          </button>
+                        </div>
+                        <p className="text-xs text-muted-foreground/60 mt-1.5">Compartilhe este código com seu(sua) parceiro(a)</p>
+                      </div>
+                    )}
+
+                    {/* Enter partner code */}
+                    <div className="flex gap-2">
+                      <input
+                        type="text" value={partnerCodeInput}
+                        onChange={e => setPartnerCodeInput(e.target.value.toUpperCase())}
+                        placeholder="Código do(a) parceiro(a)"
+                        maxLength={8}
+                        className="flex-1 bg-background border border-white/10 rounded-xl px-4 py-3 text-white font-mono tracking-widest text-sm focus:outline-none focus:border-emerald-500/50 transition-colors placeholder:tracking-normal placeholder:font-sans"
+                      />
+                      <button
+                        onClick={connectPartner}
+                        disabled={partnerLoading || !partnerCodeInput.trim()}
+                        className="px-4 py-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-medium hover:bg-emerald-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {partnerLoading ? "…" : "Conectar"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Budget modal */}
       <AnimatePresence>
@@ -877,6 +1226,7 @@ export default function FinancePage() {
             </motion.div>
           </motion.div>
         )}
+
         {/* Savings goal modal */}
         {showSavingsModal && (
           <motion.div
@@ -893,7 +1243,7 @@ export default function FinancePage() {
               <h2 className="text-2xl font-bold mb-2 text-white flex items-center gap-2">
                 <PiggyBank size={22} className="text-pink-400" /> Meta de Poupança
               </h2>
-              <p className="text-sm text-muted-foreground mb-6">Defina quanto você quer ter economizado (baseado no saldo total).</p>
+              <p className="text-sm text-muted-foreground mb-6">Defina quanto você quer ter economizado (baseado no saldo do mês).</p>
               <form
                 onSubmit={e => {
                   e.preventDefault();
