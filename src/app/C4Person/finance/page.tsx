@@ -34,6 +34,7 @@ interface Budget {
 interface Profile {
   salary_mode: "full" | "split";
   salary_amount: number;
+  salary_amount_2: number;
   invite_code: string | null;
   partner_id: string | null;
 }
@@ -69,10 +70,11 @@ export default function FinancePage() {
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
 
   /* ── profile / salary / partner ── */
-  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, invite_code: null, partner_id: null });
+  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null });
   const [showSettings, setShowSettings] = useState(false);
   const [settingSalaryMode, setSettingSalaryMode] = useState<"full" | "split">("full");
   const [settingSalaryAmount, setSettingSalaryAmount] = useState("");
+  const [settingSalaryAmount2, setSettingSalaryAmount2] = useState("");
   const [partnerCodeInput, setPartnerCodeInput] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
   const [partnerLoading, setPartnerLoading] = useState(false);
@@ -87,7 +89,7 @@ export default function FinancePage() {
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
-    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,invite_code,partner_id").eq("id", uid).single();
+    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,salary_amount_2,invite_code,partner_id").eq("id", uid).single();
     if (data) setProfile(data as Profile);
   }, []);
 
@@ -177,9 +179,9 @@ export default function FinancePage() {
   /* ── salary schedule banner ── */
   const isCurrentMonth = isSameMonth(viewMonth, new Date());
   const today = new Date().getDate();
-  const salaryBannerVisible = isCurrentMonth && profile.salary_amount > 0;
-  const salaryDay5 = profile.salary_mode === "split" ? profile.salary_amount * 0.5 : profile.salary_amount;
-  const salaryDay15 = profile.salary_mode === "split" ? profile.salary_amount * 0.5 : 0;
+  const salaryBannerVisible = isCurrentMonth && (profile.salary_amount > 0 || profile.salary_amount_2 > 0);
+  const salaryDay5 = profile.salary_amount;
+  const salaryDay15 = profile.salary_amount_2;
 
   const fmt = (v: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -366,10 +368,12 @@ export default function FinancePage() {
   /* ── settings save ── */
   const saveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amount = parseFloat(settingSalaryAmount.replace(",", "."));
+    const amount  = parseFloat(settingSalaryAmount.replace(",", "."));
+    const amount2 = parseFloat(settingSalaryAmount2.replace(",", "."));
     const updates: Partial<Profile> = {
-      salary_mode: settingSalaryMode,
-      salary_amount: isNaN(amount) ? 0 : amount,
+      salary_mode:     settingSalaryMode,
+      salary_amount:   isNaN(amount)  ? 0 : amount,
+      salary_amount_2: isNaN(amount2) ? 0 : amount2,
     };
     await supabase.from("profiles").update(updates).eq("id", userId);
     setProfile(prev => ({ ...prev, ...updates }));
@@ -475,7 +479,7 @@ export default function FinancePage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => { setSettingSalaryMode(profile.salary_mode); setSettingSalaryAmount(profile.salary_amount > 0 ? profile.salary_amount.toString() : ""); setShowSettings(true); }}
+            onClick={() => { setSettingSalaryMode(profile.salary_mode); setSettingSalaryAmount(profile.salary_amount > 0 ? profile.salary_amount.toString() : ""); setSettingSalaryAmount2(profile.salary_amount_2 > 0 ? profile.salary_amount_2.toString() : ""); setShowSettings(true); }}
             className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-white border border-white/10 px-3 py-2.5 rounded-full text-sm font-medium transition-all"
             title="Configurações Financeiras"
           >
@@ -518,12 +522,13 @@ export default function FinancePage() {
               </p>
               {profile.salary_mode === "full" ? (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {fmt(profile.salary_amount)} · pagamento único até dia 5
+                  {fmt(salaryDay5)} · pagamento único até dia 5
                   {today <= 5 ? " (ainda não registrado?)" : ""}
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Parcela 1 (dia 5): {fmt(salaryDay5)} · Parcela 2 (dia 15): {fmt(salaryDay15)}
+                  1ª parcela dia 5: {fmt(salaryDay5)} · 2ª parcela dia 15: {fmt(salaryDay15)}
+                  {salaryDay5 + salaryDay15 > 0 && ` · Total: ${fmt(salaryDay5 + salaryDay15)}`}
                 </p>
               )}
             </div>
@@ -964,20 +969,50 @@ export default function FinancePage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Valor do salário (R$)</label>
-                  <input
-                    type="number" step="0.01" value={settingSalaryAmount}
-                    onChange={e => setSettingSalaryAmount(e.target.value)}
-                    placeholder="Ex: 5000"
-                    className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
-                  />
-                  {settingSalaryMode === "split" && settingSalaryAmount && !isNaN(parseFloat(settingSalaryAmount)) && (
-                    <p className="text-xs text-emerald-400 mt-1.5">
-                      1ª parcela: {fmt(parseFloat(settingSalaryAmount) * 0.5)} · 2ª parcela: {fmt(parseFloat(settingSalaryAmount) * 0.5)}
-                    </p>
-                  )}
-                </div>
+                {settingSalaryMode === "full" ? (
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Valor do salário (R$)</label>
+                    <input
+                      type="number" step="0.01" value={settingSalaryAmount}
+                      onChange={e => setSettingSalaryAmount(e.target.value)}
+                      placeholder="Ex: 5000"
+                      className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                    />
+                    <p className="text-xs text-muted-foreground/60 mt-1.5">Pagamento integral até o dia 5</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                        1ª parcela — até dia 5 (R$)
+                      </label>
+                      <input
+                        type="number" step="0.01" value={settingSalaryAmount}
+                        onChange={e => setSettingSalaryAmount(e.target.value)}
+                        placeholder="Ex: 2500"
+                        className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                      <p className="text-xs text-muted-foreground/60 mt-1">Inclui adiantamento, horas extras, etc.</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+                        2ª parcela — dia 15 (R$)
+                      </label>
+                      <input
+                        type="number" step="0.01" value={settingSalaryAmount2}
+                        onChange={e => setSettingSalaryAmount2(e.target.value)}
+                        placeholder="Ex: 3200"
+                        className="w-full bg-background border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                      <p className="text-xs text-muted-foreground/60 mt-1">Inclui sobreaviso, bônus, etc.</p>
+                    </div>
+                    {(settingSalaryAmount || settingSalaryAmount2) && (
+                      <p className="text-xs text-emerald-400 font-medium">
+                        Total estimado: {fmt((parseFloat(settingSalaryAmount || "0") || 0) + (parseFloat(settingSalaryAmount2 || "0") || 0))}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <button
                   type="submit"
