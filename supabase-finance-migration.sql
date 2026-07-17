@@ -14,24 +14,44 @@ SET invite_code = upper(substring(replace(gen_random_uuid()::text, '-', '') for 
 WHERE invite_code IS NULL;
 
 -- 3. Política RLS: parceiro pode ver as transações do outro
---    (permite que o parceiro conectado leia suas transações)
-CREATE POLICY IF NOT EXISTS "Partners can view each other transactions"
-  ON public.transactions FOR SELECT
-  USING (
-    auth.uid() = user_id
-    OR auth.uid() IN (
-      SELECT partner_id FROM public.profiles WHERE id = user_id AND partner_id IS NOT NULL
-    )
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename  = 'transactions'
+      AND policyname = 'Partners can view each other transactions'
+  ) THEN
+    CREATE POLICY "Partners can view each other transactions"
+      ON public.transactions FOR SELECT
+      USING (
+        auth.uid() = user_id
+        OR auth.uid() IN (
+          SELECT partner_id FROM public.profiles
+          WHERE id = user_id AND partner_id IS NOT NULL
+        )
+      );
+  END IF;
+END $$;
 
 -- 4. Política RLS: parceiro pode inserir transações na conta conjunta
-CREATE POLICY IF NOT EXISTS "Partners can insert transactions"
-  ON public.transactions FOR INSERT
-  WITH CHECK (
-    auth.uid() = user_id
-    OR EXISTS (
-      SELECT 1 FROM public.profiles p
-      WHERE p.id = auth.uid()
-        AND p.partner_id = user_id
-    )
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename  = 'transactions'
+      AND policyname = 'Partners can insert transactions'
+  ) THEN
+    CREATE POLICY "Partners can insert transactions"
+      ON public.transactions FOR INSERT
+      WITH CHECK (
+        auth.uid() = user_id
+        OR EXISTS (
+          SELECT 1 FROM public.profiles p
+          WHERE p.id = auth.uid()
+            AND p.partner_id = user_id
+        )
+      );
+  END IF;
+END $$;
