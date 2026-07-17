@@ -169,6 +169,34 @@ export default function FinancePage() {
     return `conic-gradient(${segs.join(", ")})`;
   }, [categoryData]);
 
+  /* ── wallet balances per payment source ── */
+  const walletBalances = useMemo(() => {
+    const voucherNames = new Set(customIncCats.map(c => c.label));
+
+    // Each custom income category is a "voucher wallet"
+    const vouchers = customIncCats.map(c => {
+      const received = monthlyTx
+        .filter(t => t.type === "in" && t.category === c.label)
+        .reduce((s, t) => s + Number(t.amount), 0);
+      const spent = monthlyTx
+        .filter(t => t.type === "out" && Array.isArray(t.payment_source) && t.payment_source.includes(c.label))
+        .reduce((s, t) => s + Number(t.amount), 0);
+      return { label: c.label, color: c.color, received, spent, balance: received - spent };
+    });
+
+    // Bolso = all income NOT from a voucher category
+    const bolsoReceived = monthlyTx
+      .filter(t => t.type === "in" && !voucherNames.has(t.category || ""))
+      .reduce((s, t) => s + Number(t.amount), 0);
+    const bolsoSpent = monthlyTx
+      .filter(t => t.type === "out" && Array.isArray(t.payment_source) && t.payment_source.includes("Bolso (Salário)"))
+      .reduce((s, t) => s + Number(t.amount), 0);
+
+    const bolso = { label: "Bolso (Salário)", color: "#10b981", received: bolsoReceived, spent: bolsoSpent, balance: bolsoReceived - bolsoSpent };
+
+    return [bolso, ...vouchers].filter(w => w.received > 0 || w.spent > 0);
+  }, [monthlyTx, customIncCats]);
+
   /* ── filtered list — also filtered to viewMonth ── */
   const filteredTx = useMemo(() => {
     return monthlyTx.filter(t => {
@@ -675,6 +703,54 @@ export default function FinancePage() {
           </motion.div>
         ))}
       </div>
+
+      {/* Wallet balances */}
+      {walletBalances.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
+          className="mb-8"
+        >
+          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Saldo por Carteira — {format(viewMonth, "MMMM", { locale: ptBR })}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {walletBalances.map(w => {
+              const isNeg = w.balance < 0;
+              const pct = w.received > 0 ? Math.min(100, (w.spent / w.received) * 100) : 0;
+              return (
+                <div
+                  key={w.label}
+                  className="glass-card p-4 relative overflow-hidden"
+                  style={{ borderColor: `${w.color}20` }}
+                >
+                  {/* subtle tint bar */}
+                  <div
+                    className="absolute top-0 left-0 h-0.5 transition-all"
+                    style={{ width: `${pct}%`, backgroundColor: isNeg ? "#ef4444" : w.color }}
+                  />
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: w.color }} />
+                    <span className="text-xs font-semibold text-white truncate">{w.label}</span>
+                  </div>
+                  <p className={`text-xl font-bold mb-2 ${isNeg ? "text-red-400" : "text-white"}`}>
+                    {fmt(w.balance)}
+                    <span className="text-xs font-normal text-muted-foreground ml-1">restante</span>
+                  </p>
+                  <div className="flex justify-between text-[11px] text-muted-foreground">
+                    <span className="text-emerald-400">+{fmt(w.received)}</span>
+                    <span className="text-red-400">−{fmt(w.spent)}</span>
+                  </div>
+                  {/* progress bar */}
+                  <div className="h-1 rounded-full bg-white/5 overflow-hidden mt-2">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${pct}%`, backgroundColor: isNeg ? "#ef4444" : w.color }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
