@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
+
+const PluggyConnect = dynamic(
+  () => import("react-pluggy-connect").then((m) => m.PluggyConnect),
+  { ssr: false }
+);
 import { SkeletonPage } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { supabase } from "@/lib/supabase";
@@ -98,6 +104,7 @@ export default function FinancePage() {
   const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null, pluggy_item_id: null });
   const [pluggyConnecting, setPluggyConnecting] = useState(false);
   const [pluggySyncing, setPluggySyncing] = useState(false);
+  const [pluggyToken, setPluggyToken] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"salary" | "debts" | "partner">("salary");
   const [settingSalaryMode, setSettingSalaryMode] = useState<"full" | "split">("full");
@@ -816,46 +823,31 @@ export default function FinancePage() {
     setPluggyConnecting(true);
     try {
       const res = await fetch("/api/pluggy/connect-token", { method: "POST" });
-      const { connectToken, error } = await res.json();
-      if (error || !connectToken) throw new Error(error ?? "Erro ao gerar token");
-
-      await new Promise<void>((resolve, reject) => {
-        if ((window as any).PluggyConnect) { resolve(); return; }
-        const script = document.createElement("script");
-        script.src = "https://cdn.pluggy.ai/pluggy-connect/v2.x.x/pluggy-connect.min.js";
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error("Erro ao carregar widget"));
-        document.head.appendChild(script);
-      });
-
-      setPluggyConnecting(false);
-
-      new (window as any).PluggyConnect({
-        connectToken,
-        onSuccess: async ({ item }: { item: { id: string } }) => {
-          setPluggySyncing(true);
-          try {
-            const r = await fetch("/api/pluggy/sync-debts", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ itemId: item.id }),
-            });
-            const d = await r.json();
-            setProfile(p => ({ ...p, pluggy_item_id: item.id }));
-            undoToast(`${d.imported ?? 0} dívida(s) importada(s) do Open Finance!`, () => {});
-            fetchData();
-          } finally {
-            setPluggySyncing(false);
-          }
-        },
-        onError: (err: any) => {
-          console.error("Pluggy error:", err);
-          setPluggyConnecting(false);
-        },
-      }).init();
+      const { accessToken, error } = await res.json();
+      if (error || !accessToken) throw new Error(error ?? "Erro ao gerar token");
+      setPluggyToken(accessToken);
     } catch (err) {
-      setPluggyConnecting(false);
       undoToast("Erro ao conectar Open Finance. Verifique as credenciais Pluggy.", () => {});
+    } finally {
+      setPluggyConnecting(false);
+    }
+  }, [undoToast]);
+
+  const handlePluggySuccess = useCallback(async (itemData: { item: { id: string } }) => {
+    setPluggyToken(null);
+    setPluggySyncing(true);
+    try {
+      const r = await fetch("/api/pluggy/sync-debts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: itemData.item.id }),
+      });
+      const d = await r.json();
+      setProfile(p => ({ ...p, pluggy_item_id: itemData.item.id }));
+      undoToast(`${d.imported ?? 0} dívida(s) importada(s) do Open Finance!`, () => {});
+      fetchData();
+    } finally {
+      setPluggySyncing(false);
     }
   }, [fetchData, undoToast]);
 
@@ -2518,6 +2510,20 @@ export default function FinancePage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Pluggy Connect widget — renders as full-screen overlay when token is set */}
+      {pluggyToken && (
+        <PluggyConnect
+          connectToken={pluggyToken}
+          includeSandbox={true}
+          onSuccess={handlePluggySuccess}
+          onError={(err) => {
+            console.error("Pluggy error:", err);
+            setPluggyToken(null);
+          }}
+          onClose={() => setPluggyToken(null)}
+        />
+      )}
     </div>
   );
 }

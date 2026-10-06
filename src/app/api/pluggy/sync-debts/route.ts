@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { PluggyClient } from "pluggy-sdk";
 
-const PLUGGY = "https://api.pluggy.ai";
-const DEBT_TYPES = new Set(["CREDIT_CARD", "CREDIT", "LOAN", "FINANCING"]);
+const DEBT_TYPES = new Set(["CREDIT", "CREDIT_CARD", "LOAN", "FINANCING"]);
 
 const supabaseAdmin = (() => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,20 +13,6 @@ const supabaseAdmin = (() => {
   if (!url || !key) return null as unknown as ReturnType<typeof createClient>;
   return createClient(url, key);
 })();
-
-async function getApiKey(): Promise<string> {
-  const r = await fetch(`${PLUGGY}/auth`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: process.env.PLUGGY_CLIENT_ID,
-      clientSecret: process.env.PLUGGY_CLIENT_SECRET,
-    }),
-  });
-  const d = await r.json();
-  if (!d.apiKey) throw new Error("Pluggy auth failed");
-  return d.apiKey as string;
-}
 
 export async function POST(req: Request) {
   const { itemId } = await req.json();
@@ -57,23 +43,25 @@ export async function POST(req: Request) {
     .eq("id", user.id);
 
   try {
-    const apiKey = await getApiKey();
-    const r = await fetch(`${PLUGGY}/accounts?itemId=${itemId}`, {
-      headers: { "X-API-KEY": apiKey },
+    const pluggy = new PluggyClient({
+      clientId: process.env.PLUGGY_CLIENT_ID!,
+      clientSecret: process.env.PLUGGY_CLIENT_SECRET!,
     });
-    const body = await r.json();
-    const accounts: any[] = body.results ?? body.accounts ?? [];
 
+    const { results: accounts } = await pluggy.fetchAccounts(itemId);
     const debtAccounts = accounts.filter((a) => DEBT_TYPES.has(a.type));
-    let imported = 0;
 
+    let imported = 0;
     for (const acc of debtAccounts) {
-      // Credit cards: use usedCreditLimit; loans: use abs(balance)
-      const used =
-        acc.creditData?.usedCreditLimit ?? Math.abs(Number(acc.balance ?? 0));
+      // Credit cards: used = limit - available; Loans: balance = remaining principal
+      const creditLimit = acc.creditData?.creditLimit ?? null;
+      const available = acc.creditData?.availableCreditLimit ?? null;
+      const used = creditLimit != null && available != null
+        ? creditLimit - available
+        : Math.abs(Number(acc.balance ?? 0));
       if (used <= 0) continue;
 
-      const total = acc.creditData?.totalLimit ?? used;
+      const total = creditLimit ?? used;
       const paid = Math.max(0, total - used);
 
       const { error } = await supabaseAdmin.from("debts").upsert(
@@ -81,7 +69,7 @@ export async function POST(req: Request) {
           user_id: user.id,
           pluggy_account_id: acc.id,
           name: acc.name ?? "Conta importada",
-          creditor: acc.bankData?.transferNumber ?? null,
+          creditor: null,
           total_amount: total,
           paid_amount: paid,
           status: "active",
