@@ -247,6 +247,25 @@ export default function FinancePage() {
       }, {});
   }, [transactions, viewMonth]);
 
+  /* ── financial health ── */
+  const activeDebts = useMemo(() => debts.filter(d => d.status === "active"), [debts]);
+
+  const totalDebtRemaining = useMemo(() =>
+    activeDebts.reduce((s, d) => s + (Number(d.total_amount) - Number(d.paid_amount)), 0),
+    [activeDebts]
+  );
+
+  const financialHealthScore = useMemo(() => {
+    const savComp    = Math.min(40, (savingsRate / 25) * 40);
+    const annualInc  = totalIn * 12 || 1;
+    const debtComp   = Math.max(0, 40 * (1 - Math.min(1, totalDebtRemaining / annualInc)));
+    const withLimit  = budgets.filter(b => b.monthly_limit > 0);
+    const budgetComp = withLimit.length > 0
+      ? (withLimit.filter(b => (spentByCategory[b.category] || 0) <= b.monthly_limit).length / withLimit.length) * 20
+      : 20;
+    return Math.round(savComp + debtComp + budgetComp);
+  }, [savingsRate, totalDebtRemaining, totalIn, budgets, spentByCategory]);
+
   /* ── salary schedule banner ── */
   const isCurrentMonth = isSameMonth(viewMonth, new Date());
   const today = new Date().getDate();
@@ -1097,6 +1116,260 @@ export default function FinancePage() {
           </motion.div>
         ))}
       </div>
+
+      {/* ── Financial Health Dashboard ── */}
+      {(() => {
+        const hs = financialHealthScore;
+        const hColor  = hs >= 80 ? "#10b981" : hs >= 60 ? "#eab308" : hs >= 40 ? "#f97316" : "#ef4444";
+        const hText   = hs >= 80 ? "text-emerald-400" : hs >= 60 ? "text-yellow-400" : hs >= 40 ? "text-orange-400" : "text-red-400";
+        const hLabel  = hs >= 80 ? "Excelente" : hs >= 60 ? "Bom" : hs >= 40 ? "Atenção" : "Crítico";
+        const gaugeDash = (hs / 100) * 125.66;
+
+        const withLimit  = budgets.filter(b => b.monthly_limit > 0);
+        const savPts     = Math.round(Math.min(40, (savingsRate / 25) * 40));
+        const debtPts    = Math.round(Math.max(0, 40 * (1 - Math.min(1, totalDebtRemaining / ((totalIn * 12) || 1)))));
+        const budgetPts  = Math.round(withLimit.length > 0
+          ? (withLimit.filter(b => (spentByCategory[b.category] || 0) <= b.monthly_limit).length / withLimit.length) * 20
+          : 20);
+        const totalPaid  = debts.reduce((s, d) => s + Number(d.paid_amount), 0);
+        const totalOrig  = debts.reduce((s, d) => s + Number(d.total_amount), 0);
+        const overallPct = totalOrig > 0 ? Math.round((totalPaid / totalOrig) * 100) : 0;
+        const netPos     = balance - totalDebtRemaining;
+        const monthsTo   = balance > 0 && totalDebtRemaining > 0 ? Math.ceil(totalDebtRemaining / balance) : null;
+
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+
+            {/* ── Score de Saúde ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
+              className="glass-card p-6"
+            >
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-4">Saúde Financeira</p>
+              <div className="flex items-center gap-5 mb-5">
+                <div className="relative shrink-0">
+                  <svg viewBox="0 0 52 52" className="w-16 h-16 -rotate-90">
+                    <circle cx="26" cy="26" r="20" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
+                    <circle cx="26" cy="26" r="20" fill="none" stroke={hColor} strokeWidth="4"
+                      strokeDasharray={`${gaugeDash} 125.66`} strokeLinecap="round"
+                      className="transition-all duration-1000" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center rotate-90">
+                    <span className="text-sm font-bold text-white">{hs}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className={`text-xl font-bold ${hText}`}>{hLabel}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Score de 100 pts</p>
+                </div>
+              </div>
+              <div className="space-y-2.5">
+                {[
+                  { label: "Poupança", pts: savPts, max: 40, color: "bg-emerald-500" },
+                  { label: "Dívidas",  pts: debtPts, max: 40, color: "bg-blue-500" },
+                  { label: "Orçamento", pts: budgetPts, max: 20, color: "bg-violet-500" },
+                ].map(item => (
+                  <div key={item.label}>
+                    <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                      <span>{item.label}</span>
+                      <span>{item.pts}/{item.max}</span>
+                    </div>
+                    <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${item.color}`}
+                        style={{ width: `${(item.pts / item.max) * 100}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            {/* ── Posição Financeira ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+              className="glass-card p-6"
+            >
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-4">Posição Financeira</p>
+              <div className="space-y-3">
+                {[
+                  { label: "Receitas do mês", value: totalIn,  color: "bg-emerald-500", valueClass: "text-emerald-400", sign: "+" },
+                  { label: "Despesas do mês", value: totalOut, color: "bg-red-400",     valueClass: "text-red-400",     sign: "−" },
+                ].map(r => (
+                  <div key={r.label} className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${r.color}`} />
+                      {r.label}
+                    </span>
+                    <span className={`text-sm font-bold ${r.valueClass}`}>{r.sign}{fmt(r.value)}</span>
+                  </div>
+                ))}
+                <div className="border-t border-white/5 pt-2 flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground">Sobra mensal</span>
+                  <span className={`text-sm font-bold ${balance >= 0 ? "text-white" : "text-red-400"}`}>{fmt(balance)}</span>
+                </div>
+                {totalDebtRemaining > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-orange-400" />
+                      Total em dívidas
+                    </span>
+                    <span className="text-sm font-bold text-orange-400">−{fmt(totalDebtRemaining)}</span>
+                  </div>
+                )}
+                <div className="border-t border-white/10 pt-2 flex justify-between items-center">
+                  <span className="text-xs font-semibold text-white">Posição líquida</span>
+                  <span className={`text-lg font-bold ${netPos >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(netPos)}</span>
+                </div>
+              </div>
+              {monthsTo && monthsTo < 120 && (
+                <div className="mt-4 p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                  <p className="text-[10px] text-blue-300 leading-snug">
+                    Com a sobra atual, as dívidas seriam quitadas em <strong>~{monthsTo} {monthsTo === 1 ? "mês" : "meses"}</strong>
+                  </p>
+                </div>
+              )}
+            </motion.div>
+
+            {/* ── Resumo de Dívidas ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
+              className="glass-card p-6"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Resumo de Dívidas</p>
+                <button
+                  onClick={() => { setSettingSalaryMode(profile.salary_mode); setSettingSalaryAmount(profile.salary_amount > 0 ? profile.salary_amount.toString() : ""); setSettingSalaryAmount2(profile.salary_amount_2 > 0 ? profile.salary_amount_2.toString() : ""); setSettingsTab("debts"); setDebtAiAnalysis(""); setShowSettings(true); }}
+                  className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                >
+                  Gerenciar →
+                </button>
+              </div>
+              {debts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-28 text-center">
+                  <CreditCard size={24} className="text-muted-foreground/30 mb-2" />
+                  <p className="text-xs text-muted-foreground">Nenhuma dívida cadastrada</p>
+                  <button
+                    onClick={() => { setSettingsTab("debts"); setShowSettings(true); }}
+                    className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >+ Adicionar dívida</button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
+                      <p className="text-xs text-red-400 font-bold">{fmt(totalDebtRemaining)}</p>
+                      <p className="text-[10px] text-muted-foreground">a pagar</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                      <p className="text-xs text-emerald-400 font-bold">{fmt(totalPaid)}</p>
+                      <p className="text-[10px] text-muted-foreground">já pago</p>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+                      <span>{activeDebts.length} ativa(s) · {debts.filter(d => d.status === "quitada").length} quitada(s)</span>
+                      <span>{overallPct}% quitado</span>
+                    </div>
+                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-700"
+                        style={{ width: `${overallPct}%` }} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 max-h-24 overflow-y-auto">
+                    {activeDebts.slice(0, 4).map(d => {
+                      const rem = Number(d.total_amount) - Number(d.paid_amount);
+                      const p   = Math.min(100, (Number(d.paid_amount) / Number(d.total_amount)) * 100);
+                      return (
+                        <div key={d.id} className="flex items-center gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] text-muted-foreground truncate">{d.name}</p>
+                            <div className="h-1 bg-white/10 rounded-full overflow-hidden mt-0.5">
+                              <div className="h-full bg-primary rounded-full" style={{ width: `${p}%` }} />
+                            </div>
+                          </div>
+                          <span className="text-[10px] text-red-400 font-medium shrink-0">{fmt(rem)}</span>
+                        </div>
+                      );
+                    })}
+                    {activeDebts.length > 4 && (
+                      <p className="text-[10px] text-muted-foreground text-center">+{activeDebts.length - 4} mais</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        );
+      })()}
+
+      {/* ── Active Debt Cards ── */}
+      {activeDebts.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}
+          className="mb-8"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium flex items-center gap-2">
+              <CreditCard size={13} className="text-red-400" />
+              Dívidas Ativas
+              <span className="bg-red-500/20 text-red-400 border border-red-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full">{activeDebts.length}</span>
+            </p>
+            <button
+              onClick={analyzeDebtsWithAI}
+              disabled={debtAiLoading}
+              className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+            >
+              <Sparkles size={12} />
+              {debtAiLoading ? "Analisando…" : "Análise IA"}
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {activeDebts.map(debt => {
+              const remaining = Number(debt.total_amount) - Number(debt.paid_amount);
+              const pct = Math.min(100, (Number(debt.paid_amount) / Number(debt.total_amount)) * 100);
+              const monthsToPayoff = balance > 0 ? Math.ceil(remaining / balance) : null;
+              const pColor = pct >= 75 ? "#10b981" : pct >= 40 ? "#eab308" : "#ef4444";
+              return (
+                <div key={debt.id} className="glass-card p-5 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 h-0.5 w-full bg-white/5" />
+                  <div className="absolute top-0 left-0 h-0.5 rounded-r-full transition-all duration-700"
+                    style={{ width: `${pct}%`, backgroundColor: pColor }} />
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <p className="font-semibold text-white text-sm truncate">{debt.name}</p>
+                      {debt.creditor && <p className="text-xs text-muted-foreground">{debt.creditor}</p>}
+                    </div>
+                    <span className="text-xs font-bold shrink-0" style={{ color: pColor }}>{pct.toFixed(0)}%</span>
+                  </div>
+                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
+                    <div className="h-full rounded-full transition-all duration-700"
+                      style={{ width: `${pct}%`, backgroundColor: pColor }} />
+                  </div>
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-lg font-bold text-red-400">{fmt(remaining)}</p>
+                      <p className="text-[10px] text-muted-foreground">de {fmt(Number(debt.total_amount))}</p>
+                    </div>
+                    {monthsToPayoff && monthsToPayoff < 240 && (
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-muted-foreground">~{monthsToPayoff}m</p>
+                        <p className="text-[10px] text-muted-foreground/60">ao ritmo atual</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {debtAiAnalysis && (
+            <div className="mt-4 p-4 rounded-2xl bg-violet-500/10 border border-violet-500/20">
+              <p className="text-xs font-semibold text-violet-400 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
+                <Sparkles size={11} /> C4 Assistant — Estratégia de quitação
+              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{debtAiAnalysis}</p>
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {/* Wallet balances */}
       {walletBalances.length > 0 && (
