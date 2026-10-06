@@ -52,6 +52,7 @@ interface Profile {
   salary_amount_2: number;
   invite_code: string | null;
   partner_id: string | null;
+  pluggy_item_id: string | null;
 }
 
 export default function FinancePage() {
@@ -94,7 +95,9 @@ export default function FinancePage() {
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
 
   /* ── profile / salary / partner ── */
-  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null });
+  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null, pluggy_item_id: null });
+  const [pluggyConnecting, setPluggyConnecting] = useState(false);
+  const [pluggySyncing, setPluggySyncing] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"salary" | "debts" | "partner">("salary");
   const [settingSalaryMode, setSettingSalaryMode] = useState<"full" | "split">("full");
@@ -128,7 +131,7 @@ export default function FinancePage() {
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
-    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,salary_amount_2,invite_code,partner_id").eq("id", uid).single();
+    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,salary_amount_2,invite_code,partner_id,pluggy_item_id").eq("id", uid).single();
     if (data) setProfile(data as Profile);
   }, []);
 
@@ -807,6 +810,54 @@ export default function FinancePage() {
       setTimeout(() => setCopiedCode(false), 2000);
     });
   };
+
+  /* ── pluggy open finance ── */
+  const connectPluggy = useCallback(async () => {
+    setPluggyConnecting(true);
+    try {
+      const res = await fetch("/api/pluggy/connect-token", { method: "POST" });
+      const { connectToken, error } = await res.json();
+      if (error || !connectToken) throw new Error(error ?? "Erro ao gerar token");
+
+      await new Promise<void>((resolve, reject) => {
+        if ((window as any).PluggyConnect) { resolve(); return; }
+        const script = document.createElement("script");
+        script.src = "https://cdn.pluggy.ai/pluggy-connect/v2.x.x/pluggy-connect.min.js";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Erro ao carregar widget"));
+        document.head.appendChild(script);
+      });
+
+      setPluggyConnecting(false);
+
+      new (window as any).PluggyConnect({
+        connectToken,
+        onSuccess: async ({ item }: { item: { id: string } }) => {
+          setPluggySyncing(true);
+          try {
+            const r = await fetch("/api/pluggy/sync-debts", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ itemId: item.id }),
+            });
+            const d = await r.json();
+            setProfile(p => ({ ...p, pluggy_item_id: item.id }));
+            undoToast(`${d.imported ?? 0} dívida(s) importada(s) do Open Finance!`, () => {});
+            fetchData();
+          } finally {
+            setPluggySyncing(false);
+          }
+        },
+        onError: (err: any) => {
+          console.error("Pluggy error:", err);
+          setPluggyConnecting(false);
+        },
+      }).init();
+    } catch (err) {
+      setPluggyConnecting(false);
+      undoToast("Erro ao conectar Open Finance. Verifique as credenciais Pluggy.", () => {});
+    }
+  }, [fetchData, undoToast]);
 
   /* ── debt handlers ── */
   const addDebt = async (e: React.FormEvent) => {
@@ -1865,6 +1916,51 @@ export default function FinancePage() {
               {/* ── Debts tab ── */}
               {settingsTab === "debts" && (
                 <div className="flex flex-col gap-4">
+
+                  {/* Open Finance / Pluggy banner */}
+                  <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+                        <Sparkles size={13} className="text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white leading-tight">Open Finance</p>
+                        <p className="text-[10px] text-muted-foreground">Importe dívidas diretamente do seu banco</p>
+                      </div>
+                      {profile.pluggy_item_id && (
+                        <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">✓ Conectado</span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {[
+                        { n: "1", label: "Conecte seu banco via Open Finance com segurança" },
+                        { n: "2", label: "Escolha o banco e autentique com sua senha" },
+                        { n: "3", label: "Dívidas importadas automaticamente" },
+                      ].map(s => (
+                        <div key={s.n} className="flex flex-col items-center text-center gap-1.5">
+                          <span className="w-5 h-5 rounded-full bg-blue-500/30 text-blue-300 text-[10px] font-bold flex items-center justify-center shrink-0">{s.n}</span>
+                          <p className="text-[9px] text-muted-foreground leading-tight">{s.label}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={connectPluggy}
+                      disabled={pluggyConnecting || pluggySyncing}
+                      className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                      <CreditCard size={12} />
+                      {pluggyConnecting
+                        ? "Abrindo conexão…"
+                        : pluggySyncing
+                        ? "Importando dívidas…"
+                        : profile.pluggy_item_id
+                        ? "Sincronizar novamente"
+                        : "Conectar meu banco"}
+                    </button>
+                  </div>
+
                   {/* Summary KPIs */}
                   {debts.length > 0 && (
                     <div className="grid grid-cols-2 gap-3">
