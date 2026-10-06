@@ -1344,75 +1344,136 @@ export default function FinancePage() {
         );
       })()}
 
-      {/* ── Active Debt Cards ── */}
-      {activeDebts.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}
-          className="mb-8"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium flex items-center gap-2">
-              <CreditCard size={13} className="text-red-400" />
-              Dívidas Ativas
+      {/* ── Dívidas: Open Finance + Active Debt Cards ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}
+        className="mb-8"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium flex items-center gap-2">
+            <CreditCard size={13} className="text-red-400" />
+            Dívidas
+            {activeDebts.length > 0 && (
               <span className="bg-red-500/20 text-red-400 border border-red-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-full">{activeDebts.length}</span>
-            </p>
+            )}
+          </p>
+          <div className="flex items-center gap-2">
+            {activeDebts.length > 0 && (
+              <button
+                onClick={analyzeDebtsWithAI}
+                disabled={debtAiLoading}
+                className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+              >
+                <Sparkles size={12} />
+                {debtAiLoading ? "Analisando…" : "Análise IA"}
+              </button>
+            )}
             <button
-              onClick={analyzeDebtsWithAI}
-              disabled={debtAiLoading}
-              className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+              onClick={connectPluggy}
+              disabled={pluggyConnecting || pluggySyncing}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50 font-medium"
             >
-              <Sparkles size={12} />
-              {debtAiLoading ? "Analisando…" : "Análise IA"}
+              <Sparkles size={11} />
+              {pluggyConnecting ? "Conectando…" : pluggySyncing ? "Importando…" : profile.pluggy_item_id ? "Sincronizar Open Finance" : "Conectar banco (Open Finance)"}
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-            {activeDebts.map(debt => {
-              const remaining = Number(debt.total_amount) - Number(debt.paid_amount);
-              const pct = Math.min(100, (Number(debt.paid_amount) / Number(debt.total_amount)) * 100);
-              const monthsToPayoff = balance > 0 ? Math.ceil(remaining / balance) : null;
-              const pColor = pct >= 75 ? "#10b981" : pct >= 40 ? "#eab308" : "#ef4444";
-              return (
-                <div key={debt.id} className="glass-card p-5 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 h-0.5 w-full bg-white/5" />
-                  <div className="absolute top-0 left-0 h-0.5 rounded-r-full transition-all duration-700"
-                    style={{ width: `${pct}%`, backgroundColor: pColor }} />
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1 min-w-0 pr-2">
-                      <p className="font-semibold text-white text-sm truncate">{debt.name}</p>
-                      {debt.creditor && <p className="text-xs text-muted-foreground">{debt.creditor}</p>}
-                    </div>
-                    <span className="text-xs font-bold shrink-0" style={{ color: pColor }}>{pct.toFixed(0)}%</span>
-                  </div>
-                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
-                    <div className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${pct}%`, backgroundColor: pColor }} />
-                  </div>
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <p className="text-lg font-bold text-red-400">{fmt(remaining)}</p>
-                      <p className="text-[10px] text-muted-foreground">de {fmt(Number(debt.total_amount))}</p>
-                    </div>
-                    {monthsToPayoff && monthsToPayoff < 240 && (
-                      <div className="text-right">
-                        <p className="text-xs font-medium text-muted-foreground">~{monthsToPayoff}m</p>
-                        <p className="text-[10px] text-muted-foreground/60">ao ritmo atual</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {debtAiAnalysis && (
-            <div className="mt-4 p-4 rounded-2xl bg-violet-500/10 border border-violet-500/20">
-              <p className="text-xs font-semibold text-violet-400 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
-                <Sparkles size={11} /> C4 Assistant — Estratégia de quitação
-              </p>
-              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{debtAiAnalysis}</p>
+        </div>
+
+        {/* Empty state with Pluggy CTA */}
+        {activeDebts.length === 0 && (
+          <div className="glass-card p-8 flex flex-col items-center text-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+              <CreditCard size={24} className="text-blue-400" />
             </div>
-          )}
-        </motion.div>
-      )}
+            <div>
+              <p className="text-white font-semibold mb-1">Nenhuma dívida cadastrada</p>
+              <p className="text-sm text-muted-foreground">Conecte seu banco via Open Finance para importar dívidas automaticamente, ou adicione manualmente em Configurações.</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
+              <button
+                onClick={connectPluggy}
+                disabled={pluggyConnecting || pluggySyncing}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+              >
+                <Sparkles size={14} />
+                {pluggyConnecting ? "Conectando…" : pluggySyncing ? "Importando…" : "Conectar banco"}
+              </button>
+              <button
+                onClick={() => { setShowSettings(true); setSettingsTab("debts"); }}
+                className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground text-sm transition-colors border border-white/10"
+              >
+                Adicionar manualmente
+              </button>
+            </div>
+            {/* 3-step guide */}
+            <div className="w-full grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
+              {[
+                { n: "1", label: "Clique em Conectar banco" },
+                { n: "2", label: "Selecione seu banco e autentique" },
+                { n: "3", label: "Dívidas aparecem aqui automaticamente" },
+              ].map(s => (
+                <div key={s.n} className="flex flex-col items-center text-center gap-1.5">
+                  <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold flex items-center justify-center">{s.n}</span>
+                  <p className="text-[10px] text-muted-foreground leading-tight">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Active debt cards grid */}
+        {activeDebts.length > 0 && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {activeDebts.map(debt => {
+                const remaining = Number(debt.total_amount) - Number(debt.paid_amount);
+                const pct = Math.min(100, (Number(debt.paid_amount) / Number(debt.total_amount)) * 100);
+                const monthsToPayoff = balance > 0 ? Math.ceil(remaining / balance) : null;
+                const pColor = pct >= 75 ? "#10b981" : pct >= 40 ? "#eab308" : "#ef4444";
+                return (
+                  <div key={debt.id} className="glass-card p-5 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 h-0.5 w-full bg-white/5" />
+                    <div className="absolute top-0 left-0 h-0.5 rounded-r-full transition-all duration-700"
+                      style={{ width: `${pct}%`, backgroundColor: pColor }} />
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1 min-w-0 pr-2">
+                        <p className="font-semibold text-white text-sm truncate">{debt.name}</p>
+                        {debt.creditor && <p className="text-xs text-muted-foreground">{debt.creditor}</p>}
+                      </div>
+                      <span className="text-xs font-bold shrink-0" style={{ color: pColor }}>{pct.toFixed(0)}%</span>
+                    </div>
+                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${pct}%`, backgroundColor: pColor }} />
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <p className="text-lg font-bold text-red-400">{fmt(remaining)}</p>
+                        <p className="text-[10px] text-muted-foreground">de {fmt(Number(debt.total_amount))}</p>
+                      </div>
+                      {monthsToPayoff && monthsToPayoff < 240 && (
+                        <div className="text-right">
+                          <p className="text-xs font-medium text-muted-foreground">~{monthsToPayoff}m</p>
+                          <p className="text-[10px] text-muted-foreground/60">ao ritmo atual</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {debtAiAnalysis && (
+              <div className="mt-4 p-4 rounded-2xl bg-violet-500/10 border border-violet-500/20">
+                <p className="text-xs font-semibold text-violet-400 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Sparkles size={11} /> C4 Assistant — Estratégia de quitação
+                </p>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{debtAiAnalysis}</p>
+              </div>
+            )}
+          </>
+        )}
+      </motion.div>
 
       {/* Wallet balances */}
       {walletBalances.length > 0 && (
@@ -1908,50 +1969,6 @@ export default function FinancePage() {
               {/* ── Debts tab ── */}
               {settingsTab === "debts" && (
                 <div className="flex flex-col gap-4">
-
-                  {/* Open Finance / Pluggy banner */}
-                  <div className="rounded-xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
-                        <Sparkles size={13} className="text-blue-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-white leading-tight">Open Finance</p>
-                        <p className="text-[10px] text-muted-foreground">Importe dívidas diretamente do seu banco</p>
-                      </div>
-                      {profile.pluggy_item_id && (
-                        <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">✓ Conectado</span>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                      {[
-                        { n: "1", label: "Conecte seu banco via Open Finance com segurança" },
-                        { n: "2", label: "Escolha o banco e autentique com sua senha" },
-                        { n: "3", label: "Dívidas importadas automaticamente" },
-                      ].map(s => (
-                        <div key={s.n} className="flex flex-col items-center text-center gap-1.5">
-                          <span className="w-5 h-5 rounded-full bg-blue-500/30 text-blue-300 text-[10px] font-bold flex items-center justify-center shrink-0">{s.n}</span>
-                          <p className="text-[9px] text-muted-foreground leading-tight">{s.label}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={connectPluggy}
-                      disabled={pluggyConnecting || pluggySyncing}
-                      className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
-                    >
-                      <CreditCard size={12} />
-                      {pluggyConnecting
-                        ? "Abrindo conexão…"
-                        : pluggySyncing
-                        ? "Importando dívidas…"
-                        : profile.pluggy_item_id
-                        ? "Sincronizar novamente"
-                        : "Conectar meu banco"}
-                    </button>
-                  </div>
 
                   {/* Summary KPIs */}
                   {debts.length > 0 && (
