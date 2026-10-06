@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { PluggyClient } from "pluggy-sdk";
 
 const DEBT_TYPES = new Set(["CREDIT", "CREDIT_CARD", "LOAN", "FINANCING"]);
 
@@ -13,6 +12,8 @@ const supabaseAdmin = (() => {
 })();
 
 async function syncDebtsForItem(itemId: string) {
+  if (!supabaseAdmin) return;
+
   const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("id, pluggy_client_id, pluggy_client_secret")
@@ -25,6 +26,8 @@ async function syncDebtsForItem(itemId: string) {
   const clientSecret = profile.pluggy_client_secret ?? process.env.PLUGGY_CLIENT_SECRET;
   if (!clientId || !clientSecret) return;
 
+  // Dynamic import to avoid cold-start size issues
+  const { PluggyClient } = await import("pluggy-sdk");
   const pluggy = new PluggyClient({ clientId, clientSecret });
   const { results: accounts } = await pluggy.fetchAccounts(itemId);
   const debtAccounts = accounts.filter((a) => DEBT_TYPES.has(a.type));
@@ -57,18 +60,13 @@ async function syncDebtsForItem(itemId: string) {
 }
 
 export async function POST(req: Request) {
-  // Must respond 2XX within 5 seconds — always return immediately
-  const event = await req.json().catch(() => ({}));
+  // ALWAYS respond 2XX immediately — Pluggy requires response within 5s
+  let event: any = {};
+  try { event = await req.json(); } catch { /* ignore parse errors */ }
 
-  switch (event.event) {
-    case "item/created":
-    case "item/updated":
-      if (event.itemId) syncDebtsForItem(event.itemId).catch(console.error);
-      break;
-    case "item/error":
-      console.error("Pluggy item error:", event.itemId, event.error);
-      break;
-    // Pluggy sends a test ping with no specific event — just acknowledge
+  // Process heavy work async after responding
+  if (event.itemId && (event.event === "item/created" || event.event === "item/updated")) {
+    syncDebtsForItem(event.itemId).catch(console.error);
   }
 
   return NextResponse.json({ received: true });

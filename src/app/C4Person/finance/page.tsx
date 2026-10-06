@@ -2654,7 +2654,6 @@ export default function FinancePage() {
       {pluggyToken && (
         <PluggyConnect
           connectToken={pluggyToken}
-          includeSandbox={true}
           onSuccess={handlePluggySuccess}
           onError={(err) => {
             console.error("Pluggy error:", err);
