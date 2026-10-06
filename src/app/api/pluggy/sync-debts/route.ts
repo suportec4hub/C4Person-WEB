@@ -36,6 +36,23 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
+  // Fetch user's own Pluggy credentials
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("pluggy_client_id, pluggy_client_secret")
+    .eq("id", user.id)
+    .single();
+
+  const clientId = profile?.pluggy_client_id ?? process.env.PLUGGY_CLIENT_ID;
+  const clientSecret = profile?.pluggy_client_secret ?? process.env.PLUGGY_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    return NextResponse.json(
+      { error: "Configure suas credenciais Pluggy em Configurações → Dívidas" },
+      { status: 400 }
+    );
+  }
+
   // Persist itemId on the user's profile
   await supabaseAdmin
     .from("profiles")
@@ -43,17 +60,12 @@ export async function POST(req: Request) {
     .eq("id", user.id);
 
   try {
-    const pluggy = new PluggyClient({
-      clientId: process.env.PLUGGY_CLIENT_ID!,
-      clientSecret: process.env.PLUGGY_CLIENT_SECRET!,
-    });
-
+    const pluggy = new PluggyClient({ clientId, clientSecret });
     const { results: accounts } = await pluggy.fetchAccounts(itemId);
     const debtAccounts = accounts.filter((a) => DEBT_TYPES.has(a.type));
 
     let imported = 0;
     for (const acc of debtAccounts) {
-      // Credit cards: used = limit - available; Loans: balance = remaining principal
       const creditLimit = acc.creditData?.creditLimit ?? null;
       const available = acc.creditData?.availableCreditLimit ?? null;
       const used = creditLimit != null && available != null
@@ -77,7 +89,6 @@ export async function POST(req: Request) {
         },
         { onConflict: "user_id,pluggy_account_id" }
       );
-
       if (!error) imported++;
     }
 

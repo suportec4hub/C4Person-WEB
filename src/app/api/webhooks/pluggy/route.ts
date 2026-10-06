@@ -13,20 +13,19 @@ const supabaseAdmin = (() => {
 })();
 
 async function syncDebtsForItem(itemId: string) {
-  // Find which user owns this itemId
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id")
+    .select("id, pluggy_client_id, pluggy_client_secret")
     .eq("pluggy_item_id", itemId)
     .single();
 
   if (!profile) return;
 
-  const pluggy = new PluggyClient({
-    clientId: process.env.PLUGGY_CLIENT_ID!,
-    clientSecret: process.env.PLUGGY_CLIENT_SECRET!,
-  });
+  const clientId = profile.pluggy_client_id ?? process.env.PLUGGY_CLIENT_ID;
+  const clientSecret = profile.pluggy_client_secret ?? process.env.PLUGGY_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return;
 
+  const pluggy = new PluggyClient({ clientId, clientSecret });
   const { results: accounts } = await pluggy.fetchAccounts(itemId);
   const debtAccounts = accounts.filter((a) => DEBT_TYPES.has(a.type));
 
@@ -58,17 +57,18 @@ async function syncDebtsForItem(itemId: string) {
 }
 
 export async function POST(req: Request) {
-  const event = await req.json();
+  // Must respond 2XX within 5 seconds — always return immediately
+  const event = await req.json().catch(() => ({}));
 
-  // Must respond 2XX within 5 seconds — do heavy work async
   switch (event.event) {
     case "item/created":
     case "item/updated":
-      syncDebtsForItem(event.itemId).catch(console.error);
+      if (event.itemId) syncDebtsForItem(event.itemId).catch(console.error);
       break;
     case "item/error":
       console.error("Pluggy item error:", event.itemId, event.error);
       break;
+    // Pluggy sends a test ping with no specific event — just acknowledge
   }
 
   return NextResponse.json({ received: true });

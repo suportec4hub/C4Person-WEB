@@ -13,3 +13,8 @@ ALTER TABLE public.debts
 CREATE UNIQUE INDEX IF NOT EXISTS debts_pluggy_account_uniq
   ON public.debts (user_id, pluggy_account_id)
   WHERE pluggy_account_id IS NOT NULL;
+
+-- Adicionar credenciais Pluggy por usuário (rode no Supabase SQL Editor)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS pluggy_client_id TEXT,
+  ADD COLUMN IF NOT EXISTS pluggy_client_secret TEXT;

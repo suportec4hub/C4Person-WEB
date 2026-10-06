@@ -1,8 +1,16 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { PluggyClient } from "pluggy-sdk";
+
+const supabaseAdmin = (() => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null as unknown as ReturnType<typeof createClient>;
+  return createClient(url, key);
+})();
 
 export async function POST() {
   const cookieStore = await cookies();
@@ -23,19 +31,30 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-  try {
-    const pluggy = new PluggyClient({
-      clientId: process.env.PLUGGY_CLIENT_ID!,
-      clientSecret: process.env.PLUGGY_CLIENT_SECRET!,
-    });
+  // Fetch user's own Pluggy credentials
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("pluggy_client_id, pluggy_client_secret")
+    .eq("id", user.id)
+    .single();
 
-    // First arg is optional itemId; options.clientUserId tracks the C4Person user
+  const clientId = profile?.pluggy_client_id ?? process.env.PLUGGY_CLIENT_ID;
+  const clientSecret = profile?.pluggy_client_secret ?? process.env.PLUGGY_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    return NextResponse.json(
+      { error: "Configure suas credenciais Pluggy em Configurações → Dívidas" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const pluggy = new PluggyClient({ clientId, clientSecret });
     const token = await pluggy.createConnectToken(undefined, {
       clientUserId: user.id,
     } as any);
-
     return NextResponse.json({ accessToken: token.accessToken });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Erro interno" }, { status: 500 });
+    return NextResponse.json({ error: err.message ?? "Erro ao gerar token Pluggy" }, { status: 500 });
   }
 }

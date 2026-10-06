@@ -59,6 +59,8 @@ interface Profile {
   invite_code: string | null;
   partner_id: string | null;
   pluggy_item_id: string | null;
+  pluggy_client_id: string | null;
+  pluggy_client_secret: string | null;
 }
 
 export default function FinancePage() {
@@ -101,10 +103,14 @@ export default function FinancePage() {
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
 
   /* ── profile / salary / partner ── */
-  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null, pluggy_item_id: null });
+  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null, pluggy_item_id: null, pluggy_client_id: null, pluggy_client_secret: null });
   const [pluggyConnecting, setPluggyConnecting] = useState(false);
   const [pluggySyncing, setPluggySyncing] = useState(false);
   const [pluggyToken, setPluggyToken] = useState<string | null>(null);
+  const [pluggyClientId, setPluggyClientId] = useState("");
+  const [pluggyClientSecret, setPluggyClientSecret] = useState("");
+  const [pluggyCredSaving, setPluggyCredSaving] = useState(false);
+  const [showPluggySecret, setShowPluggySecret] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"salary" | "debts" | "partner">("salary");
   const [settingSalaryMode, setSettingSalaryMode] = useState<"full" | "split">("full");
@@ -138,8 +144,12 @@ export default function FinancePage() {
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
-    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,salary_amount_2,invite_code,partner_id,pluggy_item_id").eq("id", uid).single();
-    if (data) setProfile(data as Profile);
+    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,salary_amount_2,invite_code,partner_id,pluggy_item_id,pluggy_client_id,pluggy_client_secret").eq("id", uid).single();
+    if (data) {
+      setProfile(data as Profile);
+      setPluggyClientId(data.pluggy_client_id ?? "");
+      setPluggyClientSecret(data.pluggy_client_secret ?? "");
+    }
   }, []);
 
   /* ── derived: transactions filtered to viewMonth ── */
@@ -819,6 +829,22 @@ export default function FinancePage() {
   };
 
   /* ── pluggy open finance ── */
+  const savePluggyCredentials = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pluggyClientId.trim() || !pluggyClientSecret.trim()) return;
+    setPluggyCredSaving(true);
+    try {
+      await supabase.from("profiles").update({
+        pluggy_client_id: pluggyClientId.trim(),
+        pluggy_client_secret: pluggyClientSecret.trim(),
+      }).eq("id", userId);
+      setProfile(p => ({ ...p, pluggy_client_id: pluggyClientId.trim(), pluggy_client_secret: pluggyClientSecret.trim() }));
+      undoToast("Credenciais Pluggy salvas!", () => {});
+    } finally {
+      setPluggyCredSaving(false);
+    }
+  }, [pluggyClientId, pluggyClientSecret, userId, undoToast]);
+
   const connectPluggy = useCallback(async () => {
     setPluggyConnecting(true);
     try {
@@ -1388,17 +1414,31 @@ export default function FinancePage() {
             </div>
             <div>
               <p className="text-white font-semibold mb-1">Nenhuma dívida cadastrada</p>
-              <p className="text-sm text-muted-foreground">Conecte seu banco via Open Finance para importar dívidas automaticamente, ou adicione manualmente em Configurações.</p>
+              <p className="text-sm text-muted-foreground">
+                {profile.pluggy_client_id
+                  ? "Conecte seu banco via Open Finance para importar dívidas automaticamente."
+                  : "Configure suas credenciais Pluggy em Configurações → Dívidas para conectar seu banco."}
+              </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
-              <button
-                onClick={connectPluggy}
-                disabled={pluggyConnecting || pluggySyncing}
-                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
-              >
-                <Sparkles size={14} />
-                {pluggyConnecting ? "Conectando…" : pluggySyncing ? "Importando…" : "Conectar banco"}
-              </button>
+              {profile.pluggy_client_id ? (
+                <button
+                  onClick={connectPluggy}
+                  disabled={pluggyConnecting || pluggySyncing}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  <Sparkles size={14} />
+                  {pluggyConnecting ? "Conectando…" : pluggySyncing ? "Importando…" : "Conectar banco"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => { setShowSettings(true); setSettingsTab("debts"); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
+                >
+                  <Sparkles size={14} />
+                  Configurar Open Finance
+                </button>
+              )}
               <button
                 onClick={() => { setShowSettings(true); setSettingsTab("debts"); }}
                 className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground text-sm transition-colors border border-white/10"
@@ -1969,6 +2009,88 @@ export default function FinancePage() {
               {/* ── Debts tab ── */}
               {settingsTab === "debts" && (
                 <div className="flex flex-col gap-4">
+
+                  {/* ── Open Finance credentials ── */}
+                  <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 overflow-hidden">
+                    {/* Header */}
+                    <div className="flex items-center gap-2.5 px-4 py-3 border-b border-blue-500/10">
+                      <div className="w-6 h-6 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+                        <Sparkles size={12} className="text-blue-400" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-white">Configurar Open Finance (Pluggy)</p>
+                        <p className="text-[10px] text-muted-foreground">Conecte seu banco para importar dívidas automaticamente</p>
+                      </div>
+                      {profile.pluggy_client_id && (
+                        <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">✓ Configurado</span>
+                      )}
+                    </div>
+
+                    {/* Step-by-step guide */}
+                    <div className="px-4 py-3 border-b border-blue-500/10">
+                      <p className="text-[10px] font-semibold text-blue-300 uppercase tracking-wider mb-2">Como obter suas credenciais</p>
+                      <div className="flex flex-col gap-2">
+                        {[
+                          { n: "1", text: "Acesse", link: "pluggy.ai", href: "https://pluggy.ai", after: " e crie uma conta gratuita" },
+                          { n: "2", text: 'No painel, clique em "Suas Credenciais"' },
+                          { n: "3", text: "Copie o Client ID e o Client Secret" },
+                          { n: "4", text: "Cole abaixo e clique em Salvar" },
+                        ].map(s => (
+                          <div key={s.n} className="flex items-start gap-2">
+                            <span className="w-4 h-4 rounded-full bg-blue-500/20 text-blue-400 text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">{s.n}</span>
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                              {s.text}
+                              {s.link && <a href={s.href} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline mx-0.5">{s.link}</a>}
+                              {s.after}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Credentials form */}
+                    <form onSubmit={savePluggyCredentials} className="px-4 py-3 flex flex-col gap-2.5">
+                      <div>
+                        <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Client ID</label>
+                        <input
+                          type="text"
+                          value={pluggyClientId}
+                          onChange={e => setPluggyClientId(e.target.value)}
+                          placeholder="c9b55c8d-2f49-4f26-8a08-..."
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50 transition-colors font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Client Secret</label>
+                        <div className="relative">
+                          <input
+                            type={showPluggySecret ? "text" : "password"}
+                            value={pluggyClientSecret}
+                            onChange={e => setPluggyClientSecret(e.target.value)}
+                            placeholder="••••••••••••••••"
+                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-9 text-xs text-white focus:outline-none focus:border-blue-500/50 transition-colors font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPluggySecret(v => !v)}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
+                          >
+                            {showPluggySecret ? <CreditCard size={12} /> : <Sparkles size={12} />}
+                          </button>
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={pluggyCredSaving || !pluggyClientId.trim() || !pluggyClientSecret.trim()}
+                        className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                      >
+                        {pluggyCredSaving ? "Salvando…" : "Salvar credenciais"}
+                      </button>
+                      <p className="text-[9px] text-muted-foreground text-center">
+                        🔒 Salvo de forma segura no servidor. Nunca exposto no browser.
+                      </p>
+                    </form>
+                  </div>
 
                   {/* Summary KPIs */}
                   {debts.length > 0 && (
