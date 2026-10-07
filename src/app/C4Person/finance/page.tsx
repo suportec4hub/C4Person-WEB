@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 
 const PluggyConnect = dynamic(
@@ -17,11 +19,42 @@ import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
   TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target, Download,
   ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays, Pencil,
-  CreditCard, Sparkles, Loader2,
+  CreditCard, Sparkles, Loader2, Activity,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
 const CUSTOM_CAT_COLORS = ["#f43f5e","#fb923c","#fbbf24","#a3e635","#34d399","#22d3ee","#818cf8","#e879f9","#f472b6","#38bdf8"];
+
+const FINANCE_TABS = [
+  { href: "/C4Person/finance",        label: "Finanças",      icon: Wallet },
+  { href: "/C4Person/finance/bolsa",  label: "Bolsa",         icon: TrendingUp },
+  { href: "/C4Person/finance/status", label: "Status Bancos", icon: Activity },
+];
+
+function FinanceNav() {
+  const pathname = usePathname();
+  return (
+    <div className="flex items-center gap-1 mb-6 bg-white/3 border border-white/8 rounded-2xl p-1.5 w-fit">
+      {FINANCE_TABS.map(({ href, label, icon: Icon }) => {
+        const active = pathname === href;
+        return (
+          <Link
+            key={href}
+            href={href}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+              active
+                ? "bg-white/10 text-white shadow-sm"
+                : "text-muted-foreground hover:text-white hover:bg-white/5"
+            }`}
+          >
+            <Icon size={14} />
+            {label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
 
 interface Transaction {
   id: string;
@@ -1188,6 +1221,8 @@ export default function FinancePage() {
     <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 relative">
       <div className="absolute top-0 left-[20%] w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
+      <FinanceNav />
+
       {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
@@ -1615,14 +1650,13 @@ export default function FinancePage() {
                 return (
                   <div
                     key={bank.name}
-                    className="group rounded-2xl overflow-hidden border border-white/8"
+                    className="rounded-2xl overflow-hidden border border-white/8"
                     style={{ background: `linear-gradient(135deg, ${darkColor}40 0%, rgba(0,0,0,0.3) 100%)` }}
                   >
                     {/* Header row */}
-                    <div className="relative">
                     <button
                       onClick={() => setExpandedBank(isOpen ? null : bank.name)}
-                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-white/5 transition-colors text-left pr-14"
+                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-white/5 transition-colors text-left"
                     >
                       {/* Logo / avatar */}
                       {bank.logoUrl ? (
@@ -1671,16 +1705,6 @@ export default function FinancePage() {
                       </div>
                     </button>
 
-                    {/* Remove button — overlaid top-right, shows on hover */}
-                    <button
-                      onClick={() => removeBankGroup(bank.accountIds, bank.name)}
-                      disabled={removingBank === bank.accountIds[0]}
-                      className="absolute right-12 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-white/0 hover:bg-red-500/20 border border-transparent hover:border-red-500/40 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50 z-10"
-                      title="Remover banco"
-                    >
-                      <Trash2 size={12} className="text-muted-foreground group-hover:text-red-400 transition-colors" />
-                    </button>
-                    </div>
 
                     {/* Expanded detail */}
                     <AnimatePresence>
@@ -1804,6 +1828,18 @@ export default function FinancePage() {
                                   ))}
                                 </div>
                               )}
+                            </div>
+
+                            {/* Remove bank */}
+                            <div className="pt-2 border-t border-white/5">
+                              <button
+                                onClick={() => removeBankGroup(bank.accountIds, bank.name)}
+                                disabled={removingBank === bank.accountIds[0]}
+                                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
+                              >
+                                <Trash2 size={12} />
+                                {removingBank === bank.accountIds[0] ? "Removendo…" : "Remover banco"}
+                              </button>
                             </div>
 
                           </div>
