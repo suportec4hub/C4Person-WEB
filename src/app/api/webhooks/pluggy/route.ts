@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const DEBT_TYPES = new Set(["CREDIT", "CREDIT_CARD", "LOAN", "FINANCING"]);
-const TX_TYPES   = new Set(["CHECKING", "SAVINGS", "CREDIT_CARD"]);
 
 const supabaseAdmin = (() => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -112,32 +111,30 @@ async function fullSyncForItem(itemId: string) {
       }
     }
 
-    // ── Sync transactions ───────────────────────────────────────────────────
-    if (TX_TYPES.has(acc.type)) {
-      try {
-        const { results: txList } = await pluggy.fetchTransactions(acc.id, { from: fromStr } as any);
-        for (const tx of txList ?? []) {
-          const txType = (tx as any).type === "CREDIT" ? "in" : "out";
-          await supabaseAdmin.from("transactions").upsert(
-            {
-              user_id:               userId,
-              pluggy_transaction_id: (tx as any).id,
-              name:                  (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
-              amount:                Math.abs(Number((tx as any).amount ?? 0)),
-              type:                  txType,
-              category:              (tx as any).category ?? null,
-              transaction_date:      (tx as any).date
-                ? String((tx as any).date).split("T")[0]
-                : new Date().toISOString().split("T")[0],
-              source:                "pluggy",
-              payment_source:        [acc.name ?? "Banco"],
-            },
-            { onConflict: "user_id,pluggy_transaction_id" }
-          );
-        }
-      } catch {
-        // some account types don't support transaction listing
+    // ── Sync transactions — try ALL account types ──────────────────────────
+    try {
+      const { results: txList } = await pluggy.fetchTransactions(acc.id, { from: fromStr } as any);
+      for (const tx of txList ?? []) {
+        const txType = (tx as any).type === "CREDIT" ? "in" : "out";
+        await supabaseAdmin.from("transactions").upsert(
+          {
+            user_id:               userId,
+            pluggy_transaction_id: (tx as any).id,
+            name:                  (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
+            amount:                Math.abs(Number((tx as any).amount ?? 0)),
+            type:                  txType,
+            category:              (tx as any).category ?? null,
+            transaction_date:      (tx as any).date
+              ? String((tx as any).date).split("T")[0]
+              : new Date().toISOString().split("T")[0],
+            source:                "pluggy",
+            payment_source:        [acc.name ?? institutionName ?? "Banco"],
+          },
+          { onConflict: "user_id,pluggy_transaction_id" }
+        );
       }
+    } catch {
+      // this account type doesn't support transaction listing — skip silently
     }
   }
 

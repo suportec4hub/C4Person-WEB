@@ -304,14 +304,25 @@ export default function FinancePage() {
     [bankAccounts]
   );
 
+  const institutionKey = useCallback((rawName: string): string => {
+    const n = rawName.toLowerCase()
+      .replace(/\bpic\s+pay\b/g, "picpay")
+      .replace(/[^a-z0-9\s]/g, "").trim();
+    const words = n.split(/\s+/);
+    const skip = new Set(["banco", "bank", "bco", "sa", "s/a"]);
+    const first = words[0] ?? n;
+    return skip.has(first) ? (words[1] ?? first) : first;
+  }, []);
+
   const banksByInstitution = useMemo(() => {
-    const groups: Record<string, BankAccount[]> = {};
+    const groups: Record<string, { displayName: string; accounts: BankAccount[] }> = {};
     bankAccounts.forEach(ba => {
-      const key = ba.institution_name ?? ba.name;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(ba);
+      const raw = ba.institution_name ?? ba.name;
+      const key = institutionKey(raw);
+      if (!groups[key]) groups[key] = { displayName: raw, accounts: [] };
+      groups[key].accounts.push(ba);
     });
-    return Object.entries(groups).map(([name, accounts]) => {
+    return Object.entries(groups).map(([, { displayName, accounts }]) => {
       const assetBalance = accounts
         .filter(a => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type))
         .reduce((s, a) => s + Number(a.balance), 0);
@@ -320,9 +331,10 @@ export default function FinancePage() {
         return !latest || a.last_synced_at > latest ? a.last_synced_at : latest;
       }, null as string | null);
       const logoUrl = accounts.find(a => a.institution_logo_url)?.institution_logo_url ?? null;
-      return { name, accounts, assetBalance, lastSync, logoUrl };
+      const accountIds = accounts.map(a => a.pluggy_account_id);
+      return { name: displayName, accounts, assetBalance, lastSync, logoUrl, accountIds };
     });
-  }, [bankAccounts]);
+  }, [bankAccounts, institutionKey]);
 
   const financialHealthScore = useMemo(() => {
     const savComp    = Math.min(40, (savingsRate / 25) * 40);
@@ -993,6 +1005,25 @@ export default function FinancePage() {
     }
   }, [profile.pluggy_item_id, fetchData, undoToast]);
 
+  const [removingBank, setRemovingBank] = useState<string | null>(null);
+
+  const removeBankGroup = useCallback(async (accountIds: string[], bankDisplayName: string) => {
+    if (!confirm(`Remover "${bankDisplayName}" e todos os seus dados importados?`)) return;
+    setRemovingBank(accountIds[0] ?? null);
+    try {
+      for (const id of accountIds) {
+        await supabase.from("bank_accounts").delete().eq("pluggy_account_id", id);
+      }
+      setExpandedBank(prev => (prev === bankDisplayName ? null : prev));
+      await fetchData();
+      undoToast("Banco removido.", () => {});
+    } catch {
+      undoToast("Erro ao remover banco.", () => {});
+    } finally {
+      setRemovingBank(null);
+    }
+  }, [fetchData, undoToast]);
+
   const handlePluggySuccess = useCallback(async (itemData: any) => {
     setPluggyToken(null);
     // Support both { item: { id } } and direct item object
@@ -1569,25 +1600,29 @@ export default function FinancePage() {
                 const initial = bank.name.trim()[0]?.toUpperCase() ?? "B";
                 const creditAccounts = bank.accounts.filter(a => ["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type));
                 const assetAccounts  = bank.accounts.filter(a => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type));
-                const accountNames   = bank.accounts.map(a => a.name);
-                const bankTx = transactions.filter(t =>
-                  t.source === "pluggy" &&
-                  t.transaction_date >= monthStart &&
-                  t.transaction_date <= todayStr &&
-                  Array.isArray((t as any).payment_source) &&
-                  (t as any).payment_source.some((s: string) => accountNames.includes(s))
-                ).slice(0, 8);
+                const accountNames   = new Set(bank.accounts.map(a => a.name));
+                const moreThanOneBank = banksByInstitution.length > 1;
+                const bankTx = transactions.filter(t => {
+                  if (t.source !== "pluggy") return false;
+                  if (t.transaction_date < monthStart || t.transaction_date > todayStr) return false;
+                  if (!moreThanOneBank) return true;
+                  // Multiple banks: filter by account name stored in payment_source
+                  const ps = (t as any).payment_source;
+                  if (!Array.isArray(ps) || ps.length === 0) return true;
+                  return ps.some((s: string) => accountNames.has(s));
+                }).slice(0, 8);
 
                 return (
                   <div
                     key={bank.name}
-                    className="rounded-2xl overflow-hidden border border-white/8"
+                    className="group rounded-2xl overflow-hidden border border-white/8"
                     style={{ background: `linear-gradient(135deg, ${darkColor}40 0%, rgba(0,0,0,0.3) 100%)` }}
                   >
                     {/* Header row */}
+                    <div className="relative">
                     <button
                       onClick={() => setExpandedBank(isOpen ? null : bank.name)}
-                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-white/5 transition-colors text-left"
+                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-white/5 transition-colors text-left pr-14"
                     >
                       {/* Logo / avatar */}
                       {bank.logoUrl ? (
@@ -1635,6 +1670,17 @@ export default function FinancePage() {
                         <ChevronRight size={13} className="text-muted-foreground" />
                       </div>
                     </button>
+
+                    {/* Remove button — overlaid top-right, shows on hover */}
+                    <button
+                      onClick={() => removeBankGroup(bank.accountIds, bank.name)}
+                      disabled={removingBank === bank.accountIds[0]}
+                      className="absolute right-12 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg bg-white/0 hover:bg-red-500/20 border border-transparent hover:border-red-500/40 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 disabled:opacity-50 z-10"
+                      title="Remover banco"
+                    >
+                      <Trash2 size={12} className="text-muted-foreground group-hover:text-red-400 transition-colors" />
+                    </button>
+                    </div>
 
                     {/* Expanded detail */}
                     <AnimatePresence>

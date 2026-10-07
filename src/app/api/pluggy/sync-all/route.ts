@@ -4,8 +4,9 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
+// Pluggy SDK v2 uses "BANK"/"CREDIT" as types; older docs used subtype strings.
+// We accept both so the route works regardless of SDK version.
 const DEBT_TYPES = new Set(["CREDIT", "CREDIT_CARD", "LOAN", "FINANCING"]);
-const TX_TYPES   = new Set(["CHECKING", "SAVINGS", "CREDIT_CARD"]);
 
 const supabaseAdmin = (() => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,6 +14,16 @@ const supabaseAdmin = (() => {
   if (!url || !key) return null as unknown as ReturnType<typeof createClient>;
   return createClient(url, key);
 })();
+
+async function upsertBankAccount(payload: Record<string, unknown>, onConflict: string) {
+  // Try with logo column first; if it errors (column not yet migrated), retry without it
+  const { error } = await supabaseAdmin.from("bank_accounts").upsert(payload, { onConflict });
+  if (error?.message?.includes("institution_logo_url")) {
+    const { institution_logo_url: _omit, ...rest } = payload;
+    return supabaseAdmin.from("bank_accounts").upsert(rest, { onConflict });
+  }
+  return { error };
+}
 
 export async function POST(req: Request) {
   const { itemId } = await req.json();
@@ -58,17 +69,21 @@ export async function POST(req: Request) {
     const institutionName    = item.connector?.name     ?? null;
     const institutionLogoUrl = (item.connector as any)?.imageUrl ?? null;
 
-    // Persist this itemId so multi-bank users don't lose earlier connections
-    await supabaseAdmin.from("pluggy_items").upsert(
-      { user_id: user.id, item_id: itemId, institution_name: institutionName, institution_logo_url: institutionLogoUrl },
-      { onConflict: "user_id,item_id" }
-    );
+    // Persist this itemId — gracefully skip if pluggy_items table not yet migrated
+    try {
+      await supabaseAdmin.from("pluggy_items").upsert(
+        { user_id: user.id, item_id: itemId, institution_name: institutionName, institution_logo_url: institutionLogoUrl },
+        { onConflict: "user_id,item_id" }
+      );
+    } catch { /* table not yet migrated */ }
 
     const { results: accounts } = await pluggy.fetchAccounts(itemId);
 
-    // 3-month window for transaction history
-    const from = new Date();
-    from.setMonth(from.getMonth() - 3);
+    // Current month start for transaction history (always fetch from month start)
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Also fetch 2 extra months back on first sync to build history
+    const from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
     const fromStr = from.toISOString().split("T")[0];
 
     let importedDebts    = 0;
@@ -77,25 +92,27 @@ export async function POST(req: Request) {
 
     for (const acc of accounts) {
       // ── Bank account balance + credit data ───────────────────────────────
-      const { error: baErr } = await supabaseAdmin.from("bank_accounts").upsert(
+      const { error: baErr } = await upsertBankAccount(
         {
           user_id:               user.id,
           pluggy_account_id:     acc.id,
           name:                  acc.name ?? "Conta",
           type:                  acc.type,
+          subtype:               (acc as any).subtype ?? null,
           balance:               Number(acc.balance ?? 0),
           institution_name:      institutionName,
           institution_logo_url:  institutionLogoUrl,
           credit_limit:          acc.creditData?.creditLimit          != null ? Number(acc.creditData.creditLimit)            : null,
           available_credit:      acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit)   : null,
-          last_synced_at:        new Date().toISOString(),
+          last_synced_at:        now.toISOString(),
         },
-        { onConflict: "user_id,pluggy_account_id" }
+        "user_id,pluggy_account_id"
       );
       if (!baErr) importedAccounts++;
 
       // ── Debts (credit cards, loans) ──────────────────────────────────────
-      if (DEBT_TYPES.has(acc.type)) {
+      // CREDIT type = credit card / loan in Pluggy SDK v2
+      if (DEBT_TYPES.has(acc.type) || DEBT_TYPES.has((acc as any).subtype)) {
         const creditLimit = acc.creditData?.creditLimit ?? null;
         const available   = acc.creditData?.availableCreditLimit ?? null;
         const used =
@@ -122,33 +139,32 @@ export async function POST(req: Request) {
         }
       }
 
-      // ── Transactions (checking, savings, credit card) ─────────────────────
-      if (TX_TYPES.has(acc.type)) {
-        try {
-          const { results: txList } = await pluggy.fetchTransactions(acc.id, { from: fromStr } as any);
-          for (const tx of txList ?? []) {
-            const txType = (tx as any).type === "CREDIT" ? "in" : "out";
-            const { error } = await supabaseAdmin.from("transactions").upsert(
-              {
-                user_id:                user.id,
-                pluggy_transaction_id:  (tx as any).id,
-                name:                   (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
-                amount:                 Math.abs(Number((tx as any).amount ?? 0)),
-                type:                   txType,
-                category:               (tx as any).category ?? null,
-                transaction_date:       (tx as any).date
-                  ? String((tx as any).date).split("T")[0]
-                  : new Date().toISOString().split("T")[0],
-                source:                 "pluggy",
-                payment_source:         [acc.name ?? "Banco"],
-              },
-              { onConflict: "user_id,pluggy_transaction_id" }
-            );
-            if (!error) importedTx++;
-          }
-        } catch {
-          // account type may not support transaction listing — skip silently
+      // ── Transactions — try ALL account types, catch silently if unsupported ──
+      try {
+        const { results: txList } = await pluggy.fetchTransactions(acc.id, { from: fromStr } as any);
+        for (const tx of txList ?? []) {
+          // Pluggy v2: transaction.type "CREDIT" = money coming in, "DEBIT" = going out
+          const txType = (tx as any).type === "CREDIT" ? "in" : "out";
+          const { error } = await supabaseAdmin.from("transactions").upsert(
+            {
+              user_id:                user.id,
+              pluggy_transaction_id:  (tx as any).id,
+              name:                   (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
+              amount:                 Math.abs(Number((tx as any).amount ?? 0)),
+              type:                   txType,
+              category:               (tx as any).category ?? null,
+              transaction_date:       (tx as any).date
+                ? String((tx as any).date).split("T")[0]
+                : now.toISOString().split("T")[0],
+              source:                 "pluggy",
+              payment_source:         [acc.name ?? institutionName ?? "Banco"],
+            },
+            { onConflict: "user_id,pluggy_transaction_id" }
+          );
+          if (!error) importedTx++;
         }
+      } catch {
+        // This account type doesn't support transaction listing — skip silently
       }
     }
 
