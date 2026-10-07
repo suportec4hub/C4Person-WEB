@@ -1,15 +1,24 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 
+const BASE = "https://status.pluggy.ai/api";
+
 export async function GET() {
   try {
-    const res = await fetch("https://status.pluggy.ai/api/status", {
-      headers: { "Content-Type": "application/json" },
-      next: { revalidate: 60 },
-    });
-    if (!res.ok) throw new Error(`status.pluggy.ai responded ${res.status}`);
-    const data = await res.json();
-    return NextResponse.json(data);
+    // Fetch summary (compact roll-up) + full snapshot in parallel
+    const [summaryRes, snapshotRes] = await Promise.all([
+      fetch(`${BASE}/summary`, { next: { revalidate: 30 } }),
+      fetch(`${BASE}/status`,  { next: { revalidate: 30 } }),
+    ]);
+
+    const summary  = summaryRes.ok  ? await summaryRes.json()  : null;
+    const snapshot = snapshotRes.ok ? await snapshotRes.json() : null;
+
+    if (!summary && !snapshot) {
+      throw new Error("Pluggy status API unavailable");
+    }
+
+    return NextResponse.json({ summary, snapshot });
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Erro ao buscar status" }, { status: 502 });
   }
