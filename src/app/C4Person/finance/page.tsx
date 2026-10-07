@@ -33,6 +33,7 @@ interface Transaction {
   created_at: string;
   recurrence?: "none" | "daily" | "weekly" | "monthly";
   payment_source?: string[] | null;
+  source?: string | null;
 }
 
 interface Budget {
@@ -288,6 +289,13 @@ export default function FinancePage() {
   const totalDebtRemaining = useMemo(() =>
     activeDebts.reduce((s, d) => s + (Number(d.total_amount) - Number(d.paid_amount)), 0),
     [activeDebts]
+  );
+
+  const totalBankBalance = useMemo(() =>
+    bankAccounts
+      .filter(ba => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(ba.type))
+      .reduce((s, ba) => s + Number(ba.balance), 0),
+    [bankAccounts]
   );
 
   const financialHealthScore = useMemo(() => {
@@ -1438,34 +1446,92 @@ export default function FinancePage() {
       {bankAccounts.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
-          className="mb-6"
+          className="mb-8"
         >
-          <div className="flex items-center gap-2 mb-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium flex items-center gap-2">
-              <Wallet size={13} className="text-emerald-400" />
-              Contas conectadas
-            </p>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] text-emerald-400 font-medium">Sincronizado automaticamente</span>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {bankAccounts.map(ba => (
-              <div key={ba.id} className="glass-card p-3 flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] text-muted-foreground truncate">{ba.institution_name ?? ba.name}</p>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0 ml-1">{ba.type}</span>
+          <div className="glass-card p-5">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
+                  <Wallet size={16} className="text-emerald-400" />
                 </div>
-                <p className="text-sm font-bold text-white truncate">{ba.name}</p>
-                <p className={`text-base font-bold ${ba.balance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                  {Number(ba.balance).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                </p>
-                {ba.last_synced_at && (
-                  <p className="text-[9px] text-muted-foreground">
-                    Sync: {new Date(ba.last_synced_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                  </p>
-                )}
+                <div>
+                  <p className="text-sm font-semibold text-white">Open Finance</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[10px] text-emerald-400 font-medium">Sincronização automática ativa</span>
+                  </div>
+                </div>
               </div>
-            ))}
+              <div className="text-right">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Saldo em conta</p>
+                <p className={`text-2xl font-bold mt-0.5 ${totalBankBalance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {fmt(totalBankBalance)}
+                </p>
+              </div>
+            </div>
+
+            {/* Account cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {bankAccounts.map(ba => {
+                const isDebt = ["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(ba.type);
+                const typeLabel: Record<string, string> = {
+                  CHECKING: "Conta Corrente", SAVINGS: "Poupança",
+                  CREDIT_CARD: "Cartão de Crédito", CREDIT: "Crédito",
+                  LOAN: "Empréstimo", FINANCING: "Financiamento",
+                };
+                return (
+                  <div
+                    key={ba.id}
+                    className={`relative p-4 rounded-2xl border overflow-hidden transition-all ${
+                      isDebt
+                        ? "border-orange-500/20 bg-orange-500/5 hover:border-orange-500/30"
+                        : "border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/30"
+                    }`}
+                  >
+                    {/* Top accent line */}
+                    <div className={`absolute top-0 left-0 right-0 h-0.5 ${isDebt ? "bg-orange-400/40" : "bg-emerald-400/40"}`} />
+
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1 min-w-0 pr-2">
+                        <p className="text-[10px] text-muted-foreground truncate">
+                          {ba.institution_name ?? "Banco"}
+                        </p>
+                        <p className="text-sm font-semibold text-white truncate mt-0.5">{ba.name}</p>
+                      </div>
+                      <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                        isDebt
+                          ? "bg-orange-500/20 text-orange-400 border-orange-500/30"
+                          : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                      }`}>
+                        {typeLabel[ba.type] ?? ba.type}
+                      </span>
+                    </div>
+
+                    <p className={`text-xl font-bold ${
+                      isDebt ? "text-orange-400" : ba.balance >= 0 ? "text-emerald-400" : "text-red-400"
+                    }`}>
+                      {Number(ba.balance).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </p>
+
+                    {ba.last_synced_at && (
+                      <p className="text-[9px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                        <span className={`w-1 h-1 rounded-full ${isDebt ? "bg-orange-400/60" : "bg-emerald-400/60"}`} />
+                        Atualizado {new Date(ba.last_synced_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    )}
+
+                    {/* Decorative circle */}
+                    <div className={`absolute -right-3 -bottom-3 w-14 h-14 rounded-full opacity-[0.07] ${isDebt ? "bg-orange-400" : "bg-emerald-400"}`} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer note */}
+            <p className="text-[10px] text-muted-foreground mt-4 text-center">
+              Contas correntes e poupança somam o saldo total · Cartões e dívidas aparecem em laranja
+            </p>
           </div>
         </motion.div>
       )}
@@ -1963,6 +2029,11 @@ export default function FinancePage() {
                         {t.payment_source.length === 1
                           ? t.payment_source[0]
                           : `Misto (${t.payment_source.length})`}
+                      </span>
+                    )}
+                    {t.source === "pluggy" && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-md border border-blue-500/30 text-blue-400 bg-blue-500/10 font-medium">
+                        🏦 Banco
                       </span>
                     )}
                   </div>
