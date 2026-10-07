@@ -450,10 +450,18 @@ export default function BolsaPage() {
             : 50;
 
           return (
-            <div key={ticker} className="rounded-2xl overflow-hidden border border-white/8 bg-white/3">
+            <div key={ticker} id={`stock-card-${ticker}`} className="rounded-2xl overflow-hidden border border-white/8 bg-white/3">
               {/* Main row */}
               <button
-                onClick={() => setExpanded(isOpen ? null : ticker)}
+                onClick={() => {
+                  const opening = !isOpen;
+                  setExpanded(opening ? ticker : null);
+                  if (opening) {
+                    setTimeout(() => {
+                      document.getElementById(`stock-card-${ticker}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    }, 80);
+                  }
+                }}
                 className="w-full flex items-center gap-4 px-5 py-4 hover:bg-white/4 transition-colors text-left"
               >
                 {/* Logo */}
