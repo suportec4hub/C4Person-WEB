@@ -110,6 +110,7 @@ export default function FinancePage() {
   const [pluggyClientId, setPluggyClientId] = useState("");
   const [pluggyClientSecret, setPluggyClientSecret] = useState("");
   const [pluggyCredSaving, setPluggyCredSaving] = useState(false);
+  const [pluggyDisconnecting, setPluggyDisconnecting] = useState(false);
   const [showPluggySecret, setShowPluggySecret] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"salary" | "debts" | "partner">("salary");
@@ -844,6 +845,23 @@ export default function FinancePage() {
       setPluggyCredSaving(false);
     }
   }, [pluggyClientId, pluggyClientSecret, userId, undoToast]);
+
+  const disconnectPluggy = useCallback(async () => {
+    setPluggyDisconnecting(true);
+    try {
+      await supabase.from("profiles").update({
+        pluggy_client_id: null,
+        pluggy_client_secret: null,
+        pluggy_item_id: null,
+      }).eq("id", userId);
+      setProfile(p => ({ ...p, pluggy_client_id: null, pluggy_client_secret: null, pluggy_item_id: null }));
+      setPluggyClientId("");
+      setPluggyClientSecret("");
+      undoToast("Credenciais Pluggy removidas.", () => {});
+    } finally {
+      setPluggyDisconnecting(false);
+    }
+  }, [userId, undoToast]);
 
   const connectPluggy = useCallback(async () => {
     setPluggyConnecting(true);
@@ -2098,6 +2116,16 @@ export default function FinancePage() {
                       >
                         {pluggyCredSaving ? "Salvando…" : "Salvar credenciais"}
                       </button>
+                      {profile.pluggy_client_id && (
+                        <button
+                          type="button"
+                          onClick={disconnectPluggy}
+                          disabled={pluggyDisconnecting}
+                          className="w-full py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs font-semibold transition-colors border border-red-500/20 disabled:opacity-50"
+                        >
+                          {pluggyDisconnecting ? "Removendo…" : "Desconectar e limpar credenciais"}
+                        </button>
+                      )}
                       <p className="text-[9px] text-muted-foreground text-center">
                         🔒 Salvo de forma segura no servidor. Nunca exposto no browser.
                       </p>
