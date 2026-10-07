@@ -19,7 +19,7 @@ import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
   TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target, Download,
   ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays, Pencil,
-  CreditCard, Sparkles, Loader2, Activity,
+  CreditCard, Sparkles, Loader2, Activity, RefreshCw,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
@@ -1881,35 +1881,26 @@ export default function FinancePage() {
                 {debtAiLoading ? "Analisando…" : "Análise IA"}
               </button>
             )}
-            {bankAccounts.length > 0 ? (
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {profile.pluggy_client_id && (
                 <button
                   onClick={resyncPluggy}
                   disabled={pluggySyncing}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 transition-colors disabled:opacity-50 font-medium"
                 >
-                  {pluggySyncing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  {pluggySyncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
                   {pluggySyncing ? "Sincronizando…" : "Sincronizar bancos"}
                 </button>
-                <button
-                  onClick={connectPluggy}
-                  disabled={pluggyConnecting || pluggySyncing}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50 font-medium"
-                >
-                  <Plus size={11} />
-                  {pluggyConnecting ? "Abrindo…" : "Adicionar banco"}
-                </button>
-              </div>
-            ) : (
+              )}
               <button
                 onClick={connectPluggy}
                 disabled={pluggyConnecting || pluggySyncing}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50 font-medium"
               >
-                <Sparkles size={11} />
-                {pluggyConnecting ? "Conectando…" : "Conectar banco (Open Finance)"}
+                <Plus size={11} />
+                {pluggyConnecting ? "Conectando…" : bankAccounts.length > 0 ? "Adicionar banco" : "Conectar banco (Open Finance)"}
               </button>
-            )}
+            </div>
           </div>
         </div>
 
@@ -1922,13 +1913,33 @@ export default function FinancePage() {
             <div>
               <p className="text-white font-semibold mb-1">Nenhuma dívida cadastrada</p>
               <p className="text-sm text-muted-foreground">
-                {profile.pluggy_client_id
-                  ? "Conecte seu banco via Open Finance para importar dívidas automaticamente."
-                  : "Configure suas credenciais Pluggy em Configurações → Dívidas para conectar seu banco."}
+                {!profile.pluggy_client_id
+                  ? "Configure suas credenciais Pluggy em Configurações → Dívidas para conectar seu banco."
+                  : bankAccounts.length === 0
+                  ? "Seus bancos estão configurados mas os dados não foram importados. Clique em Sincronizar para reimportar."
+                  : "Conecte seu banco via Open Finance para importar dívidas automaticamente."}
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
-              {profile.pluggy_client_id ? (
+              {!profile.pluggy_client_id ? (
+                <button
+                  onClick={() => { setShowSettings(true); setSettingsTab("debts"); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
+                >
+                  <Sparkles size={14} />
+                  Configurar Open Finance
+                </button>
+              ) : bankAccounts.length === 0 ? (
+                /* Banks configured but no accounts in DB → sync first */
+                <button
+                  onClick={resyncPluggy}
+                  disabled={pluggySyncing}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={pluggySyncing ? "animate-spin" : ""} />
+                  {pluggySyncing ? "Sincronizando…" : "Sincronizar bancos"}
+                </button>
+              ) : (
                 <button
                   onClick={connectPluggy}
                   disabled={pluggyConnecting || pluggySyncing}
@@ -1936,14 +1947,6 @@ export default function FinancePage() {
                 >
                   <Sparkles size={14} />
                   {pluggyConnecting ? "Conectando…" : pluggySyncing ? "Importando…" : "Conectar banco"}
-                </button>
-              ) : (
-                <button
-                  onClick={() => { setShowSettings(true); setSettingsTab("debts"); }}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors"
-                >
-                  <Sparkles size={14} />
-                  Configurar Open Finance
                 </button>
               )}
               <button
@@ -1953,19 +1956,21 @@ export default function FinancePage() {
                 Adicionar manualmente
               </button>
             </div>
-            {/* 3-step guide */}
-            <div className="w-full grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
-              {[
-                { n: "1", label: "Clique em Conectar banco" },
-                { n: "2", label: "Selecione seu banco e autentique" },
-                { n: "3", label: "Dívidas aparecem aqui automaticamente" },
-              ].map(s => (
-                <div key={s.n} className="flex flex-col items-center text-center gap-1.5">
-                  <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold flex items-center justify-center">{s.n}</span>
-                  <p className="text-[10px] text-muted-foreground leading-tight">{s.label}</p>
-                </div>
-              ))}
-            </div>
+            {/* 3-step guide — only when not already configured */}
+            {!profile.pluggy_client_id && (
+              <div className="w-full grid grid-cols-3 gap-3 pt-2 border-t border-white/5">
+                {[
+                  { n: "1", label: "Clique em Conectar banco" },
+                  { n: "2", label: "Selecione seu banco e autentique" },
+                  { n: "3", label: "Dívidas aparecem aqui automaticamente" },
+                ].map(s => (
+                  <div key={s.n} className="flex flex-col items-center text-center gap-1.5">
+                    <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold flex items-center justify-center">{s.n}</span>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
