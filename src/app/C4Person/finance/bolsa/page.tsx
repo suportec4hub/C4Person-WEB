@@ -380,35 +380,35 @@ function LivePlayer() {
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadVideoId = useCallback(async () => {
-    setStatus("loading");
+  const loadVideoId = useCallback(async (silent = false) => {
+    // silent=true: periodic background refresh — keeps the iframe mounted so playback continues
+    if (!silent) setStatus("loading");
     try {
       const res  = await fetch("/api/cnn-live");
       const json = await res.json();
       if (json.videoId) {
         setVideoId(json.videoId);
         setStatus("ok");
-        // Auto-refresh after 5 min in case the live stream rotates
-        retryRef.current = setTimeout(loadVideoId, 5 * 60 * 1000);
+        // Background refresh every 30 min in case the live stream changes video ID
+        retryRef.current = setTimeout(() => loadVideoId(true), 30 * 60 * 1000);
       } else {
-        setStatus("error");
-        // Retry in 2 min
-        retryRef.current = setTimeout(loadVideoId, 2 * 60 * 1000);
+        if (!silent) setStatus("error");
+        retryRef.current = setTimeout(() => loadVideoId(true), 2 * 60 * 1000);
       }
     } catch {
-      setStatus("error");
-      retryRef.current = setTimeout(loadVideoId, 2 * 60 * 1000);
+      if (!silent) setStatus("error");
+      retryRef.current = setTimeout(() => loadVideoId(true), 2 * 60 * 1000);
     }
   }, []);
 
   useEffect(() => {
-    loadVideoId();
+    loadVideoId(false);
     return () => { if (retryRef.current) clearTimeout(retryRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const embedSrc = videoId
-    ? `https://www.youtube.com/embed/${videoId}?autoplay=0&rel=0&modestbranding=1`
+    ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1`
     : null;
 
   return (
@@ -433,7 +433,7 @@ function LivePlayer() {
         <div className="flex items-center gap-1.5">
           {status === "error" && (
             <button
-              onClick={loadVideoId}
+              onClick={() => loadVideoId(false)}
               className="text-[10px] text-muted-foreground hover:text-white transition-colors px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10"
               title="Tentar novamente"
             >
@@ -483,7 +483,7 @@ function LivePlayer() {
               </div>
               <div className="flex flex-col gap-2 items-center">
                 <button
-                  onClick={loadVideoId}
+                  onClick={() => loadVideoId(false)}
                   className="text-xs px-4 py-2 rounded-xl bg-white/8 hover:bg-white/15 text-white transition-colors border border-white/10"
                 >
                   ↻ Tentar novamente
