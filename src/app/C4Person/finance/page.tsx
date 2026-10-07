@@ -61,6 +61,8 @@ interface BankAccount {
   balance: number;
   institution_name: string | null;
   last_synced_at: string | null;
+  credit_limit?: number | null;
+  available_credit?: number | null;
 }
 
 interface Profile {
@@ -124,6 +126,7 @@ export default function FinancePage() {
   const [pluggyClientSecret, setPluggyClientSecret] = useState("");
   const [pluggyCredSaving, setPluggyCredSaving] = useState(false);
   const [pluggyDisconnecting, setPluggyDisconnecting] = useState(false);
+  const [expandedBank, setExpandedBank] = useState<string | null>(null);
   const [showPluggySecret, setShowPluggySecret] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"salary" | "debts" | "partner">("salary");
@@ -297,6 +300,25 @@ export default function FinancePage() {
       .reduce((s, ba) => s + Number(ba.balance), 0),
     [bankAccounts]
   );
+
+  const banksByInstitution = useMemo(() => {
+    const groups: Record<string, BankAccount[]> = {};
+    bankAccounts.forEach(ba => {
+      const key = ba.institution_name ?? ba.name;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(ba);
+    });
+    return Object.entries(groups).map(([name, accounts]) => {
+      const assetBalance = accounts
+        .filter(a => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type))
+        .reduce((s, a) => s + Number(a.balance), 0);
+      const lastSync = accounts.reduce((latest, a) => {
+        if (!a.last_synced_at) return latest;
+        return !latest || a.last_synced_at > latest ? a.last_synced_at : latest;
+      }, null as string | null);
+      return { name, accounts, assetBalance, lastSync };
+    });
+  }, [bankAccounts]);
 
   const financialHealthScore = useMemo(() => {
     const savComp    = Math.min(40, (savingsRate / 25) * 40);
@@ -1442,99 +1464,213 @@ export default function FinancePage() {
         );
       })()}
 
-      {/* ── Contas bancárias conectadas ── */}
-      {bankAccounts.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
-          className="mb-8"
-        >
-          <div className="glass-card p-5">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
-                  <Wallet size={16} className="text-emerald-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">Open Finance</p>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-[10px] text-emerald-400 font-medium">Sincronização automática ativa</span>
-                  </div>
-                </div>
+      {/* ── Open Finance — bancos conectados ── */}
+      {banksByInstitution.length > 0 && (() => {
+        const TYPE_LABEL: Record<string, string> = {
+          CHECKING: "Conta Corrente", SAVINGS: "Poupança",
+          CREDIT_CARD: "Cartão de Crédito", CREDIT: "Crédito",
+          LOAN: "Empréstimo", FINANCING: "Financiamento",
+        };
+        const BANK_COLORS = ["#10b981","#3b82f6","#8b5cf6","#f59e0b","#06b6d4","#ec4899","#ef4444","#84cc16"];
+        const bankColor = (name: string) => {
+          let h = 0; for (const c of name) h = c.charCodeAt(0) + ((h << 5) - h);
+          return BANK_COLORS[Math.abs(h) % BANK_COLORS.length];
+        };
+
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+            className="mb-8"
+          >
+            {/* Section header */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium flex items-center gap-2">
+                  <Wallet size={13} className="text-emerald-400" /> Open Finance
+                </p>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] text-emerald-400 font-medium">{banksByInstitution.length} banco{banksByInstitution.length > 1 ? "s" : ""} conectado{banksByInstitution.length > 1 ? "s" : ""}</span>
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Saldo em conta</p>
-                <p className={`text-2xl font-bold mt-0.5 ${totalBankBalance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                  {fmt(totalBankBalance)}
-                </p>
+                <span className="text-[10px] text-muted-foreground">Saldo total em conta </span>
+                <span className={`text-sm font-bold ${totalBankBalance >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(totalBankBalance)}</span>
               </div>
             </div>
 
-            {/* Account cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {bankAccounts.map(ba => {
-                const isDebt = ["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(ba.type);
-                const typeLabel: Record<string, string> = {
-                  CHECKING: "Conta Corrente", SAVINGS: "Poupança",
-                  CREDIT_CARD: "Cartão de Crédito", CREDIT: "Crédito",
-                  LOAN: "Empréstimo", FINANCING: "Financiamento",
-                };
+            {/* Bank accordion list */}
+            <div className="flex flex-col gap-2">
+              {banksByInstitution.map(bank => {
+                const color = bankColor(bank.name);
+                const isOpen = expandedBank === bank.name;
+                const initials = bank.name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase().slice(0, 2);
+                const creditAccounts = bank.accounts.filter(a => ["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type));
+                const assetAccounts  = bank.accounts.filter(a => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type));
                 return (
-                  <div
-                    key={ba.id}
-                    className={`relative p-4 rounded-2xl border overflow-hidden transition-all ${
-                      isDebt
-                        ? "border-orange-500/20 bg-orange-500/5 hover:border-orange-500/30"
-                        : "border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/30"
-                    }`}
-                  >
-                    {/* Top accent line */}
-                    <div className={`absolute top-0 left-0 right-0 h-0.5 ${isDebt ? "bg-orange-400/40" : "bg-emerald-400/40"}`} />
-
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1 min-w-0 pr-2">
-                        <p className="text-[10px] text-muted-foreground truncate">
-                          {ba.institution_name ?? "Banco"}
-                        </p>
-                        <p className="text-sm font-semibold text-white truncate mt-0.5">{ba.name}</p>
+                  <div key={bank.name} className="glass-card overflow-hidden">
+                    {/* Collapsed row — always visible */}
+                    <button
+                      onClick={() => setExpandedBank(isOpen ? null : bank.name)}
+                      className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors text-left"
+                    >
+                      {/* Avatar */}
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-lg"
+                        style={{ backgroundColor: `${color}30`, border: `1px solid ${color}40`, color }}
+                      >
+                        {initials}
                       </div>
-                      <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
-                        isDebt
-                          ? "bg-orange-500/20 text-orange-400 border-orange-500/30"
-                          : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-                      }`}>
-                        {typeLabel[ba.type] ?? ba.type}
-                      </span>
-                    </div>
 
-                    <p className={`text-xl font-bold ${
-                      isDebt ? "text-orange-400" : ba.balance >= 0 ? "text-emerald-400" : "text-red-400"
-                    }`}>
-                      {Number(ba.balance).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                    </p>
+                      {/* Name + status */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-white truncate">{bank.name}</p>
+                          <span className="flex items-center gap-1 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            <span className="text-[9px] text-emerald-400 font-medium">OK</span>
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {assetAccounts.length > 0 && `${assetAccounts.length} conta${assetAccounts.length > 1 ? "s" : ""}`}
+                          {assetAccounts.length > 0 && creditAccounts.length > 0 && " · "}
+                          {creditAccounts.length > 0 && `${creditAccounts.length} cartão${creditAccounts.length > 1 ? "ões" : ""}`}
+                          {bank.lastSync && ` · Sync ${new Date(bank.lastSync).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                        </p>
+                      </div>
 
-                    {ba.last_synced_at && (
-                      <p className="text-[9px] text-muted-foreground mt-1.5 flex items-center gap-1">
-                        <span className={`w-1 h-1 rounded-full ${isDebt ? "bg-orange-400/60" : "bg-emerald-400/60"}`} />
-                        Atualizado {new Date(ba.last_synced_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    )}
+                      {/* Asset balance */}
+                      <div className="text-right shrink-0">
+                        <p className={`text-base font-bold ${bank.assetBalance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {fmt(bank.assetBalance)}
+                        </p>
+                        <p className="text-[9px] text-muted-foreground">em conta</p>
+                      </div>
 
-                    {/* Decorative circle */}
-                    <div className={`absolute -right-3 -bottom-3 w-14 h-14 rounded-full opacity-[0.07] ${isDebt ? "bg-orange-400" : "bg-emerald-400"}`} />
+                      {/* Chevron */}
+                      <ChevronRight
+                        size={16}
+                        className={`text-muted-foreground shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+                      />
+                    </button>
+
+                    {/* Expanded detail */}
+                    <AnimatePresence>
+                      {isOpen && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.22, ease: "easeInOut" }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-4 pb-4 pt-1 border-t border-white/5 flex flex-col gap-3">
+
+                            {/* Asset accounts */}
+                            {assetAccounts.length > 0 && (
+                              <div>
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-medium">Contas</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {assetAccounts.map(acc => (
+                                    <div key={acc.id} className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-medium text-white truncate">{acc.name}</p>
+                                        <p className="text-[10px] text-muted-foreground">{TYPE_LABEL[acc.type] ?? acc.type}</p>
+                                      </div>
+                                      <p className={`text-sm font-bold shrink-0 ${Number(acc.balance) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                        {fmt(Number(acc.balance))}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Credit accounts */}
+                            {creditAccounts.length > 0 && (
+                              <div>
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-medium">Crédito</p>
+                                <div className="flex flex-col gap-2">
+                                  {creditAccounts.map(acc => {
+                                    const used      = Math.abs(Number(acc.balance));
+                                    const limit     = acc.credit_limit ? Number(acc.credit_limit) : null;
+                                    const available = acc.available_credit ? Number(acc.available_credit) : (limit != null ? limit - used : null);
+                                    const usedPct   = limit != null && limit > 0 ? Math.min(100, (used / limit) * 100) : null;
+                                    const barColor  = usedPct != null ? (usedPct >= 80 ? "#ef4444" : usedPct >= 50 ? "#f59e0b" : "#10b981") : "#f59e0b";
+                                    return (
+                                      <div key={acc.id} className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/15">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <div className="min-w-0">
+                                            <p className="text-xs font-medium text-white truncate">{acc.name}</p>
+                                            <p className="text-[10px] text-muted-foreground">{TYPE_LABEL[acc.type] ?? acc.type}</p>
+                                          </div>
+                                          <span className="text-xs font-bold text-orange-400 shrink-0">{fmt(used)} usado</span>
+                                        </div>
+                                        {limit != null && (
+                                          <>
+                                            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mb-1.5">
+                                              <div
+                                                className="h-full rounded-full transition-all duration-500"
+                                                style={{ width: `${usedPct}%`, backgroundColor: barColor }}
+                                              />
+                                            </div>
+                                            <div className="flex justify-between text-[10px]">
+                                              <span className="text-muted-foreground">Limite {fmt(limit)}</span>
+                                              <span style={{ color: barColor }}>
+                                                {available != null ? `${fmt(available)} disponível` : `${usedPct?.toFixed(0)}% utilizado`}
+                                              </span>
+                                            </div>
+                                          </>
+                                        )}
+                                        {limit == null && (
+                                          <p className="text-[10px] text-muted-foreground">Limite não disponível — sincronize novamente</p>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Recent transactions from this bank */}
+                            {(() => {
+                              const bankTx = transactions
+                                .filter(t => (t as any).source === "pluggy")
+                                .slice(0, 5);
+                              if (bankTx.length === 0) return null;
+                              return (
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-medium">Últimas transações importadas</p>
+                                  <div className="flex flex-col gap-1">
+                                    {bankTx.map(t => (
+                                      <div key={t.id} className="flex items-center gap-3 py-1.5 border-b border-white/5 last:border-0">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${t.type === "in" ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
+                                          {t.type === "in"
+                                            ? <ArrowUpRight size={12} className="text-emerald-400" />
+                                            : <ArrowDownRight size={12} className="text-red-400" />}
+                                        </div>
+                                        <p className="text-xs text-white flex-1 truncate">{t.name}</p>
+                                        <span className="text-[10px] text-muted-foreground shrink-0">
+                                          {t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM") : ""}
+                                        </span>
+                                        <span className={`text-xs font-bold shrink-0 ${t.type === "in" ? "text-emerald-400" : "text-red-400"}`}>
+                                          {t.type === "in" ? "+" : "−"}{fmt(Number(t.amount))}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 );
               })}
             </div>
-
-            {/* Footer note */}
-            <p className="text-[10px] text-muted-foreground mt-4 text-center">
-              Contas correntes e poupança somam o saldo total · Cartões e dívidas aparecem em laranja
-            </p>
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        );
+      })()}
 
       {/* ── Dívidas: Open Finance + Active Debt Cards ── */}
       <motion.div

@@ -63,6 +63,22 @@ export async function POST(req: Request) {
     let importedTx    = 0;
 
     for (const acc of accounts) {
+      // ── Bank account balance + credit data ───────────────────────────────
+      await supabaseAdmin.from("bank_accounts").upsert(
+        {
+          user_id:           user.id,
+          pluggy_account_id: acc.id,
+          name:              acc.name ?? "Conta",
+          type:              acc.type,
+          balance:           Number(acc.balance ?? 0),
+          institution_name:  (acc as any).institution?.name ?? null,
+          credit_limit:      acc.creditData?.creditLimit          != null ? Number(acc.creditData.creditLimit)            : null,
+          available_credit:  acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit)   : null,
+          last_synced_at:    new Date().toISOString(),
+        },
+        { onConflict: "user_id,pluggy_account_id" }
+      );
+
       // ── Debts (credit cards, loans) ──────────────────────────────────────
       if (DEBT_TYPES.has(acc.type)) {
         const creditLimit = acc.creditData?.creditLimit ?? null;
