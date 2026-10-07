@@ -35,6 +35,7 @@ import {
   Building2,
   CreditCard,
   Activity,
+  BarChart2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -116,6 +117,65 @@ function getGreeting() {
   if (h >= 0 && h < 12) return "Bom dia";
   if (h >= 12 && h < 18) return "Boa tarde";
   return "Boa noite";
+}
+
+type BolsaCache = Record<string, { price: number; change: number; changePercent: number }>;
+
+function BolsaOverview() {
+  const [cache, setCache] = useState<BolsaCache>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("c4p_bolsa_cache");
+      if (raw) setCache(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  const tickers = Object.keys(cache);
+  if (tickers.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="mb-6"
+    >
+      <div className="flex items-center justify-between mb-2 px-0.5">
+        <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+          <BarChart2 size={13} className="text-emerald-400" />
+          Bolsa de Valores
+        </h3>
+        <Link href="/C4Person/finance/bolsa" className="text-xs text-muted-foreground hover:text-white transition-colors">
+          Ver tudo →
+        </Link>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x snap-mandatory">
+        {tickers.map(ticker => {
+          const d = cache[ticker];
+          const positive = d.changePercent >= 0;
+          return (
+            <Link
+              key={ticker}
+              href="/C4Person/finance/bolsa"
+              className="snap-start shrink-0 glass-card px-4 py-3 flex items-center gap-3 hover:border-primary/30 transition-all min-w-[140px]"
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-muted-foreground tracking-wide">{ticker}</p>
+                <p className="text-sm font-bold text-white leading-tight">
+                  R$ {d.price.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className={`ml-auto flex items-center gap-0.5 text-xs font-semibold shrink-0 ${positive ? "text-emerald-400" : "text-red-400"}`}>
+                {positive ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                {positive ? "+" : ""}{d.changePercent.toFixed(2)}%
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
 }
 
 export default function Dashboard() {
@@ -972,9 +1032,11 @@ export default function Dashboard() {
           </motion.div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
+        <BolsaOverview />
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 items-start">
           {/* Foco Principal */}
-          <motion.section 
+          <motion.section
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
