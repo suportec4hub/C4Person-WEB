@@ -1099,33 +1099,58 @@ export default function FinancePage() {
         return;
       }
 
-      let totalAccounts = 0, totalTx = 0, totalDebts = 0;
+      let totalAccounts = 0, totalTx = 0, totalDebts = 0, errorCount = 0;
+      const firstErrors: string[] = [];
+
       for (const itemId of itemIds) {
-        const r = await fetch("/api/pluggy/sync-all", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemId }),
-        });
-        const d = await r.json();
-        if (!d.error) {
-          totalAccounts += d.importedAccounts ?? 0;
-          totalTx       += d.importedTx       ?? 0;
-          totalDebts    += d.importedDebts     ?? 0;
+        try {
+          const r = await fetch("/api/pluggy/sync-all", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ itemId }),
+          });
+          const d = await r.json();
+          if (d.error) {
+            errorCount++;
+            if (firstErrors.length < 1) firstErrors.push(String(d.error));
+          } else {
+            totalAccounts += d.importedAccounts ?? 0;
+            totalTx       += d.importedTx       ?? 0;
+            totalDebts    += d.importedDebts     ?? 0;
+          }
+        } catch {
+          errorCount++;
         }
       }
 
       await fetchData();
+
+      // Build toast message
       const parts = [
         totalAccounts && `${totalAccounts} conta${totalAccounts > 1 ? "s" : ""}`,
         totalTx       && `${totalTx} transaç${totalTx === 1 ? "ão" : "ões"}`,
         totalDebts    && `${totalDebts} dívida${totalDebts > 1 ? "s" : ""}`,
       ].filter(Boolean);
-      undoToast(
-        parts.length
-          ? `Sincronizado: ${parts.join(", ")} de ${itemIds.length} banco${itemIds.length > 1 ? "s" : ""}.`
-          : `${itemIds.length} banco${itemIds.length > 1 ? "s" : ""} sincronizado${itemIds.length > 1 ? "s" : ""}!`,
-        () => {}
-      );
+
+      if (errorCount === itemIds.length) {
+        // All items failed — probably expired connections
+        const hint = firstErrors[0] ? `: ${firstErrors[0]}` : "";
+        undoToast(`Conexão expirada. Reconecte os bancos via "Adicionar banco"${hint}.`, () => {});
+      } else if (errorCount > 0) {
+        undoToast(
+          parts.length
+            ? `Parcial: ${parts.join(", ")} importadas. ${errorCount} banco(s) com erro — reconecte-os.`
+            : `${itemIds.length - errorCount} banco(s) sincronizados, ${errorCount} com erro — reconecte-os.`,
+          () => {}
+        );
+      } else {
+        undoToast(
+          parts.length
+            ? `Sincronizado: ${parts.join(", ")} de ${itemIds.length} banco${itemIds.length > 1 ? "s" : ""}.`
+            : `${itemIds.length} banco${itemIds.length > 1 ? "s" : ""} sincronizado${itemIds.length > 1 ? "s" : ""}! Nenhum dado novo.`,
+          () => {}
+        );
+      }
     } catch {
       undoToast("Erro ao sincronizar. Tente novamente.", () => {});
     } finally {

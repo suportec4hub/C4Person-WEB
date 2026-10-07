@@ -191,14 +191,49 @@ function MiniOHLC({ data, w = 300, h = 80 }: { data: HistoricalPoint[]; w?: numb
   );
 }
 
-// ── CNN Business live player ──────────────────────────────────────────────────
-// YouTube live_stream endpoint: embeds whatever is currently live on the channel.
-// CNN Money Brasil (@cnnbrmoney) — canal oficial no YouTube
-const CNN_EMBED_URL =
-  "https://www.youtube.com/embed/live_stream?channel=UCTkXRDQl0luXxVQrRQvWS6w&autoplay=0&rel=0&modestbranding=1";
+// ── CNN Money Brasil live player ─────────────────────────────────────────────
+// Server API resolves the live video ID dynamically so the player always shows
+// whatever is currently live on @cnnbrmoney, even if the stream changes.
+
+const CNN_CHANNEL_URL = "https://www.youtube.com/@cnnbrmoney/live";
 
 function LivePlayer() {
   const [open, setOpen] = useState(true);
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadVideoId = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const res  = await fetch("/api/cnn-live");
+      const json = await res.json();
+      if (json.videoId) {
+        setVideoId(json.videoId);
+        setStatus("ok");
+        // Auto-refresh after 5 min in case the live stream rotates
+        retryRef.current = setTimeout(loadVideoId, 5 * 60 * 1000);
+      } else {
+        setStatus("error");
+        // Retry in 2 min
+        retryRef.current = setTimeout(loadVideoId, 2 * 60 * 1000);
+      }
+    } catch {
+      setStatus("error");
+      retryRef.current = setTimeout(loadVideoId, 2 * 60 * 1000);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadVideoId();
+    return () => { if (retryRef.current) clearTimeout(retryRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const embedSrc = videoId
+    ? `https://www.youtube.com/embed/${videoId}?autoplay=0&rel=0&modestbranding=1`
+    : null;
+
   return (
     <div className="rounded-2xl overflow-hidden border border-white/10 bg-white/3 shadow-lg">
       {/* Header */}
@@ -206,33 +241,90 @@ function LivePlayer() {
         <div className="flex items-center gap-2">
           <div className="relative">
             <div className="w-2 h-2 rounded-full bg-red-500" />
-            <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-60" />
+            {status === "ok" && (
+              <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-60" />
+            )}
           </div>
           <Tv size={12} className="text-muted-foreground" />
           <span className="text-xs font-semibold text-white">CNN Money Brasil</span>
-          <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
-            Live
-          </span>
+          {status === "ok" && (
+            <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
+              Live
+            </span>
+          )}
         </div>
-        <button
-          onClick={() => setOpen(v => !v)}
-          className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-white transition-colors"
-        >
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </button>
+        <div className="flex items-center gap-1.5">
+          {status === "error" && (
+            <button
+              onClick={loadVideoId}
+              className="text-[10px] text-muted-foreground hover:text-white transition-colors px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10"
+              title="Tentar novamente"
+            >
+              ↻
+            </button>
+          )}
+          <button
+            onClick={() => setOpen(v => !v)}
+            className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-white transition-colors"
+          >
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </button>
+        </div>
       </div>
-      {/* Player */}
+
+      {/* Player body */}
       {open && (
-        <div className="aspect-video bg-black">
-          <iframe
-            src={CNN_EMBED_URL}
-            title="CNN Money Brasil Live"
-            className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
-        </div>
+        <>
+          {status === "loading" && (
+            <div className="aspect-video bg-black flex flex-col items-center justify-center gap-3">
+              <div className="w-6 h-6 rounded-full border-2 border-white/20 border-t-red-500 animate-spin" />
+              <p className="text-[10px] text-muted-foreground">Carregando stream…</p>
+            </div>
+          )}
+
+          {status === "ok" && embedSrc && (
+            <div className="aspect-video bg-black">
+              <iframe
+                key={videoId}
+                src={embedSrc}
+                title="CNN Money Brasil Live"
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="aspect-video bg-black flex flex-col items-center justify-center gap-4 px-6 text-center">
+              <Tv size={28} className="text-white/20" />
+              <div>
+                <p className="text-sm font-semibold text-white/60">Stream indisponível</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  CNN Money Brasil pode não estar ao vivo agora,<br />ou tente recarregar.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 items-center">
+                <button
+                  onClick={loadVideoId}
+                  className="text-xs px-4 py-2 rounded-xl bg-white/8 hover:bg-white/15 text-white transition-colors border border-white/10"
+                >
+                  ↻ Tentar novamente
+                </button>
+                <a
+                  href={CNN_CHANNEL_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-red-400 hover:text-red-300 transition-colors"
+                >
+                  Abrir no YouTube →
+                </a>
+              </div>
+            </div>
+          )}
+        </>
       )}
+
       {!open && (
         <div className="px-4 py-2 text-[10px] text-muted-foreground">
           Clique ▲ para abrir o player
