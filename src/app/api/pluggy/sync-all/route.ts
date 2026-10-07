@@ -23,17 +23,29 @@ async function putBankAccount(userId: string, pluggyAccountId: string, payload: 
     .eq("pluggy_account_id", pluggyAccountId)
     .maybeSingle();
 
-  const tryWrite = async (p: Record<string, unknown>) => {
+  const doWrite = async (p: Record<string, unknown>) => {
     if (existing) {
       return supabaseAdmin.from("bank_accounts").update(p).eq("id", existing.id);
     }
     return supabaseAdmin.from("bank_accounts").insert(p);
   };
 
-  const { error } = await tryWrite(payload);
-  if (error?.message?.includes("institution_logo_url")) {
-    const { institution_logo_url: _omit, ...rest } = payload;
-    return tryWrite(rest);
+  // Core fields guaranteed to exist in all schema versions
+  const corePayload = {
+    user_id:           payload.user_id,
+    pluggy_account_id: payload.pluggy_account_id,
+    name:              payload.name,
+    type:              payload.type,
+    balance:           payload.balance,
+    last_synced_at:    payload.last_synced_at,
+  };
+
+  let { error } = await doWrite(payload);
+  if (error) {
+    // Retry without optional columns that may not be in the schema yet
+    const stripped = { ...corePayload, institution_name: payload.institution_name };
+    const retry = await doWrite(stripped);
+    error = retry.error ?? null;
   }
   return { error };
 }
@@ -82,12 +94,15 @@ export async function POST(req: Request) {
 
     // Pluggy item status values that require user re-authentication
     const EXPIRED_STATUSES = new Set(["LOGIN_ERROR", "WAITING_USER_INPUT", "OUTDATED"]);
-    // "UPDATING" means Pluggy is still fetching data — wait and retry once
+    // Poll until item is no longer UPDATING (up to 30s, 3s intervals)
     let itemStatus = (item as any).status ?? "";
     if (itemStatus === "UPDATING") {
-      await new Promise(r => setTimeout(r, 5000));
-      const refreshed = await pluggy.fetchItem(itemId);
-      itemStatus = (refreshed as any).status ?? itemStatus;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const refreshed = await pluggy.fetchItem(itemId);
+        itemStatus = (refreshed as any).status ?? "";
+        if (itemStatus !== "UPDATING") break;
+      }
     }
     if (EXPIRED_STATUSES.has(itemStatus)) {
       const institutionName = item.connector?.name ?? "banco";

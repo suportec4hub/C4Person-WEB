@@ -252,6 +252,8 @@ export default function FinancePage() {
   const [pluggyConnecting, setPluggyConnecting] = useState(false);
   const [pluggySyncing, setPluggySyncing] = useState(false);
   const [pluggyToken, setPluggyToken] = useState<string | null>(null);
+  // Item IDs that were just connected in this session — not "expired", just pending sync
+  const [syncingItemIds, setSyncingItemIds] = useState<Set<string>>(new Set());
   const [pluggyClientId, setPluggyClientId] = useState("");
   const [pluggyClientSecret, setPluggyClientSecret] = useState("");
   const [pluggyCredSaving, setPluggyCredSaving] = useState(false);
@@ -1224,12 +1226,13 @@ export default function FinancePage() {
 
   const handlePluggySuccess = useCallback(async (itemData: any) => {
     setPluggyToken(null);
-    // Support both { item: { id } } and direct item object
     const itemId: string | undefined = itemData?.item?.id ?? itemData?.id;
     if (!itemId) {
       undoToast("Conexão concluída, mas não foi possível obter o ID da conta.", () => {});
       return;
     }
+    // Mark as actively syncing so the UI shows "Sincronizando..." instead of "Expirada"
+    setSyncingItemIds(prev => new Set(prev).add(itemId));
     setPluggySyncing(true);
     try {
       const r = await fetch("/api/pluggy/sync-all", {
@@ -1238,7 +1241,9 @@ export default function FinancePage() {
         body: JSON.stringify({ itemId }),
       });
       const d = await r.json();
-      if (d.error) {
+      if (d.error && d.needsReconnect) {
+        undoToast(`Banco precisa ser reconectado: ${d.error}`, () => {});
+      } else if (d.error) {
         undoToast(`Erro ao importar: ${d.error}`, () => {});
       } else {
         setProfile(p => ({ ...p, pluggy_item_id: itemId }));
@@ -1246,13 +1251,14 @@ export default function FinancePage() {
         if (d.importedAccounts) parts.push(`${d.importedAccounts} conta${d.importedAccounts === 1 ? "" : "s"}`);
         if (d.importedTx)       parts.push(`${d.importedTx} transaç${d.importedTx === 1 ? "ão" : "ões"}`);
         if (d.importedDebts)    parts.push(`${d.importedDebts} dívida${d.importedDebts === 1 ? "" : "s"}`);
-        undoToast(parts.length ? `Banco conectado! ${parts.join(", ")} importadas.` : "Banco conectado! Nenhum dado novo.", () => {});
-        fetchData();
+        undoToast(parts.length ? `Banco conectado! ${parts.join(", ")} importadas.` : "Banco conectado! Sincronizando dados...", () => {});
+        await fetchData();
       }
     } catch {
-      undoToast("Erro de rede ao importar dívidas.", () => {});
+      undoToast("Erro de rede ao importar dados.", () => {});
     } finally {
       setPluggySyncing(false);
+      setSyncingItemIds(prev => { const s = new Set(prev); s.delete(itemId); return s; });
     }
   }, [fetchData, undoToast]);
 
@@ -2105,32 +2111,43 @@ export default function FinancePage() {
                     </button>
                   </div>
                 ) : (
-                  pluggyItems.map(item => (
-                  <div key={item.item_id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                  pluggyItems.map(item => {
+                  const isSyncing = syncingItemIds.has(item.item_id) || pluggySyncing;
+                  return (
+                  <div key={item.item_id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${isSyncing ? "bg-emerald-500/8 border-emerald-500/20" : "bg-amber-500/8 border-amber-500/20"}`}>
                     {item.institution_logo_url ? (
                       <div className="w-8 h-8 rounded-lg bg-white p-1 shrink-0">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={item.institution_logo_url} alt={item.institution_name ?? ""} className="w-full h-full object-contain" />
                       </div>
                     ) : (
-                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-400 text-xs font-bold">
+                      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 text-xs font-bold ${isSyncing ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400" : "bg-amber-500/20 border-amber-500/30 text-amber-400"}`}>
                         {(item.institution_name ?? "?")[0]?.toUpperCase()}
                       </div>
                     )}
                     <div className="flex-1 text-left">
                       <p className="text-sm font-medium text-white">{item.institution_name ?? "Banco"}</p>
-                      <p className="text-[10px] text-amber-400">Conexão expirada — precisa reautenticar</p>
+                      {isSyncing ? (
+                        <p className="text-[10px] text-emerald-400 flex items-center gap-1">
+                          <Loader2 size={9} className="animate-spin" /> Sincronizando dados...
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-amber-400">Conexão expirada — precisa reautenticar</p>
+                      )}
                     </div>
-                    <button
-                      onClick={() => connectPluggy(item.item_id)}
-                      disabled={pluggyConnecting}
-                      className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 font-medium transition-colors disabled:opacity-50"
-                    >
-                      <RefreshCw size={10} className={pluggyConnecting ? "animate-spin" : ""} />
-                      Reconectar
-                    </button>
+                    {!isSyncing && (
+                      <button
+                        onClick={() => connectPluggy(item.item_id)}
+                        disabled={pluggyConnecting}
+                        className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 font-medium transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw size={10} />
+                        Reconectar
+                      </button>
+                    )}
                   </div>
-                ))
+                  );
+                })
                 )}
                 <p className="text-[10px] text-muted-foreground text-center pt-1">
                   Ou use "Adicionar banco" acima para conectar uma nova conta
