@@ -859,19 +859,31 @@ export default function FinancePage() {
     }
   }, [undoToast]);
 
-  const handlePluggySuccess = useCallback(async (itemData: { item: { id: string } }) => {
+  const handlePluggySuccess = useCallback(async (itemData: any) => {
     setPluggyToken(null);
+    // Support both { item: { id } } and direct item object
+    const itemId: string | undefined = itemData?.item?.id ?? itemData?.id;
+    if (!itemId) {
+      undoToast("Conexão concluída, mas não foi possível obter o ID da conta.", () => {});
+      return;
+    }
     setPluggySyncing(true);
     try {
       const r = await fetch("/api/pluggy/sync-debts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId: itemData.item.id }),
+        body: JSON.stringify({ itemId }),
       });
       const d = await r.json();
-      setProfile(p => ({ ...p, pluggy_item_id: itemData.item.id }));
-      undoToast(`${d.imported ?? 0} dívida(s) importada(s) do Open Finance!`, () => {});
-      fetchData();
+      if (d.error) {
+        undoToast(`Erro ao importar: ${d.error}`, () => {});
+      } else {
+        setProfile(p => ({ ...p, pluggy_item_id: itemId }));
+        undoToast(`${d.imported ?? 0} dívida(s) importada(s) do Open Finance!`, () => {});
+        fetchData();
+      }
+    } catch {
+      undoToast("Erro de rede ao importar dívidas.", () => {});
     } finally {
       setPluggySyncing(false);
     }
@@ -2655,9 +2667,10 @@ export default function FinancePage() {
         <PluggyConnect
           connectToken={pluggyToken}
           onSuccess={handlePluggySuccess}
-          onError={(err) => {
+          onError={(err: any) => {
             console.error("Pluggy error:", err);
             setPluggyToken(null);
+            undoToast(`Erro Pluggy: ${err?.message ?? "falha na conexão"}`, () => {});
           }}
           onClose={() => setPluggyToken(null)}
         />
