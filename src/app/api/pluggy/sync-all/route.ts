@@ -236,7 +236,7 @@ export async function POST(req: Request) {
               type:                   txType,
               category:               (tx as any).category ?? null,
               transaction_date:       (tx as any).date
-                ? String((tx as any).date).split("T")[0]
+                ? new Date((tx as any).date).toISOString().split("T")[0]
                 : now.toISOString().split("T")[0],
               source:                 "pluggy",
               payment_source:         [acc.name ?? institutionName ?? "Banco"],
