@@ -32,6 +32,9 @@ import {
   Send,
   Sparkles,
   GripVertical,
+  Building2,
+  CreditCard,
+  Activity,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -188,6 +191,13 @@ export default function Dashboard() {
   const [newTransactionName, setNewTransactionName] = useState("");
   const [newTransactionAmount, setNewTransactionAmount] = useState("");
   const [newTransactionType, setNewTransactionType] = useState<"in" | "out">("out");
+
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+
+  const fetchBankAccounts = useCallback(async () => {
+    const { data } = await supabase.from("bank_accounts").select("*").order("institution_name", { ascending: true });
+    if (data) setBankAccounts(data);
+  }, []);
 
   const fetchTasks = useCallback(async () => {
     const { data } = await supabase.from('tasks').select('*').order('created_at', { ascending: true });
@@ -405,7 +415,7 @@ export default function Dashboard() {
   useEffect(() => {
     setMounted(true);
 
-    Promise.all([fetchTasks(), fetchHabits(), fetchTransactions(), fetchHabitLogs()]).finally(() => setLoading(false));
+    Promise.all([fetchTasks(), fetchHabits(), fetchTransactions(), fetchHabitLogs(), fetchBankAccounts()]).finally(() => setLoading(false));
 
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -435,6 +445,9 @@ export default function Dashboard() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, fetchTransactions)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "transactions" }, fetchTransactions)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "transactions" }, (p) => setTransactions(prev => prev.filter(t => t.id !== p.old.id)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "bank_accounts" }, fetchBankAccounts)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "bank_accounts" }, fetchBankAccounts)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "bank_accounts" }, (p) => setBankAccounts(prev => prev.filter(b => b.id !== p.old.id)))
       .subscribe();
 
     // Keyboard shortcuts
@@ -449,7 +462,7 @@ export default function Dashboard() {
       supabase.removeChannel(channel);
       window.removeEventListener("keydown", onKey);
     };
-  }, [fetchTasks, fetchHabits, fetchTransactions, fetchHabitLogs]);
+  }, [fetchTasks, fetchHabits, fetchTransactions, fetchHabitLogs, fetchBankAccounts]);
 
   // Timer para o gravador
   useEffect(() => {
@@ -751,6 +764,29 @@ export default function Dashboard() {
   const totalOut = transactions.filter(t => t.type === 'out').reduce((acc, curr) => acc + Number(curr.amount), 0);
   const totalBalance = totalIn - totalOut;
 
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const monthIn  = transactions.filter(t => t.type === 'in'  && (t.transaction_date || '').slice(0, 7) === currentMonthStr).reduce((s, t) => s + Number(t.amount), 0);
+  const monthOut = transactions.filter(t => t.type === 'out' && (t.transaction_date || '').slice(0, 7) === currentMonthStr).reduce((s, t) => s + Number(t.amount), 0);
+  const monthBalance = monthIn - monthOut;
+
+  const assetBankBalance = useMemo(() =>
+    bankAccounts
+      .filter(b => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(b.type))
+      .reduce((s, b) => s + Number(b.balance ?? 0), 0),
+    [bankAccounts]
+  );
+  const connectedBanks = useMemo(() => {
+    const names = new Set(bankAccounts.map(b => b.institution_name ?? b.name));
+    return names.size;
+  }, [bankAccounts]);
+  const lastBankSync = useMemo(() =>
+    bankAccounts.reduce((latest, b) => {
+      if (!b.last_synced_at) return latest;
+      return !latest || b.last_synced_at > latest ? b.last_synced_at : latest;
+    }, null as string | null),
+    [bankAccounts]
+  );
+
   const topPriorityTask = tasks.find(t => t.priority === 'alta' && !t.is_done) || tasks.find(t => !t.is_done) || tasks[0];
   const otherTasks = topPriorityTask ? tasks.filter(t => t.id !== topPriorityTask.id) : tasks;
   const upcomingEvents = tasks.filter(t => t.time && t.time !== "Livre" && !t.is_done).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
@@ -789,11 +825,36 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
+            className="flex items-center gap-4"
           >
-            <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">
-              {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
-            </h2>
-            <h1 className="text-2xl md:text-4xl font-bold tracking-tight">{getGreeting()}{firstName ? `, ${firstName}` : ""}</h1>
+            <div>
+              <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">
+                {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
+              </h2>
+              <h1 className="text-2xl md:text-4xl font-bold tracking-tight">{getGreeting()}{firstName ? `, ${firstName}` : ""}</h1>
+            </div>
+            {(tasks.length > 0 || habits.length > 0) && (() => {
+              const total = tasks.length + habits.length;
+              const done  = tasksDone + habitsDone;
+              const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+              const circ  = 2 * Math.PI * 18;
+              return (
+                <div className="hidden md:flex flex-col items-center gap-0.5">
+                  <div className="relative w-14 h-14">
+                    <svg viewBox="0 0 44 44" className="w-14 h-14 -rotate-90">
+                      <circle cx="22" cy="22" r="18" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                      <circle cx="22" cy="22" r="18" fill="none"
+                        stroke={pct >= 80 ? "rgb(52,211,153)" : pct >= 40 ? "rgb(139,92,246)" : "rgb(251,146,60)"}
+                        strokeWidth="3"
+                        strokeDasharray={`${(pct / 100) * circ} ${circ}`}
+                        strokeLinecap="round" className="transition-all duration-1000" />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-sm font-bold">{pct}%</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground">do dia</span>
+                </div>
+              );
+            })()}
           </motion.div>
 
           <div className="flex items-center gap-2 sm:gap-3">
@@ -823,64 +884,90 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {/* Tarefas */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-            className="glass-card p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-              <ListChecks size={18} className="text-primary" />
+            className="glass-card p-4 flex items-center gap-3 hover:border-primary/30 transition-colors">
+            <div className="relative w-11 h-11 shrink-0">
+              <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgb(139,92,246)" strokeWidth="3"
+                  strokeDasharray={`${tasks.length > 0 ? (tasksDone / tasks.length) * 87.96 : 0} 87.96`}
+                  strokeLinecap="round" className="transition-all duration-700" />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center">
+                <ListChecks size={14} className="text-primary" />
+              </span>
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs text-muted-foreground mb-0.5">Tarefas</p>
               <p className="text-xl font-bold leading-none">
                 {tasksDone}<span className="text-sm font-normal text-muted-foreground">/{tasks.length}</span>
               </p>
-              <div className="mt-1.5 h-1 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full transition-all duration-700"
-                  style={{ width: tasks.length > 0 ? `${(tasksDone / tasks.length) * 100}%` : '0%' }} />
-              </div>
+              <p className="text-xs text-muted-foreground mt-1">{tasks.length > 0 ? Math.round((tasksDone / tasks.length) * 100) : 0}% concluídas</p>
             </div>
           </motion.div>
           {/* Hábitos */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="glass-card p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-500/15 flex items-center justify-center shrink-0">
-              <Flame size={18} className="text-orange-400" />
+            className="glass-card p-4 flex items-center gap-3 hover:border-orange-500/30 transition-colors">
+            <div className="relative w-11 h-11 shrink-0">
+              <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgb(251,146,60)" strokeWidth="3"
+                  strokeDasharray={`${habits.length > 0 ? (habitsDone / habits.length) * 87.96 : 0} 87.96`}
+                  strokeLinecap="round" className="transition-all duration-700" />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center">
+                <Flame size={14} className="text-orange-400" />
+              </span>
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs text-muted-foreground mb-0.5">Hábitos</p>
               <p className="text-xl font-bold leading-none">
                 {habitsDone}<span className="text-sm font-normal text-muted-foreground">/{habits.length}</span>
               </p>
-              <div className="mt-1.5 h-1 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-orange-400 rounded-full transition-all duration-700"
-                  style={{ width: habits.length > 0 ? `${(habitsDone / habits.length) * 100}%` : '0%' }} />
-              </div>
+              <p className="text-xs text-muted-foreground mt-1">{habits.length > 0 ? Math.round((habitsDone / habits.length) * 100) : 0}% do dia</p>
             </div>
           </motion.div>
           {/* Sequência */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-            className="glass-card p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-yellow-500/15 flex items-center justify-center shrink-0">
-              <Flame size={18} className="text-yellow-400" />
+            className="glass-card p-4 flex items-center gap-3 hover:border-yellow-500/30 transition-colors">
+            <div className="relative w-11 h-11 shrink-0">
+              <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgb(234,179,8)" strokeWidth="3"
+                  strokeDasharray={`${Math.min((bestStreak / 30) * 87.96, 87.96)} 87.96`}
+                  strokeLinecap="round" className="transition-all duration-700" />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center">
+                <Flame size={14} className="text-yellow-400" />
+              </span>
             </div>
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground mb-0.5">Melhor Streak</p>
               <p className="text-xl font-bold leading-none">
                 {bestStreak}<span className="text-sm font-normal text-muted-foreground"> dias</span>
               </p>
-              <p className="text-xs text-yellow-500/70 mt-1">sequência atual</p>
+              <p className="text-xs text-yellow-500/70 mt-1">sequência ativa</p>
             </div>
           </motion.div>
-          {/* Saldo */}
+          {/* Saldo do mês */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-            className="glass-card p-4 flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${totalBalance >= 0 ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
-              <Wallet size={18} className={totalBalance >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+            className={`glass-card p-4 flex items-center gap-3 transition-colors ${monthBalance >= 0 ? 'hover:border-emerald-500/30' : 'hover:border-red-500/30'}`}>
+            <div className="relative w-11 h-11 shrink-0">
+              <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+                <circle cx="18" cy="18" r="14" fill="none" stroke={monthBalance >= 0 ? "rgb(52,211,153)" : "rgb(248,113,113)"} strokeWidth="3"
+                  strokeDasharray={`${monthIn > 0 ? Math.min((monthIn / (monthIn + monthOut)) * 87.96, 87.96) : 0} 87.96`}
+                  strokeLinecap="round" className="transition-all duration-700" />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center">
+                <Activity size={14} className={monthBalance >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+              </span>
             </div>
             <div className="min-w-0">
-              <p className="text-xs text-muted-foreground mb-0.5">Saldo</p>
-              <p className={`text-lg font-bold leading-none truncate ${totalBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {formatCurrency(totalBalance)}
+              <p className="text-xs text-muted-foreground mb-0.5">Este Mês</p>
+              <p className={`text-base font-bold leading-none truncate ${monthBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {formatCurrency(monthBalance)}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">{savingsRate}% poupança</p>
+              <p className="text-xs text-muted-foreground mt-1">{savingsRate}% de poupança</p>
             </div>
           </motion.div>
         </div>
@@ -1082,17 +1169,30 @@ export default function Dashboard() {
               <Wallet size={20} className="text-emerald-400" />
               Visão Financeira
             </h3>
-            <Link href="/C4Person/finance" className="text-xs font-medium text-muted-foreground hover:text-white transition-colors">Ver Relatório Completo →</Link>
+            <Link href="/C4Person/finance" className="text-xs font-medium text-muted-foreground hover:text-white transition-colors">Ver completo →</Link>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-10">
-            {/* Saldo Atual */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
+            {/* Saldo do Mês */}
             <div className="bg-background/40 border border-white/5 rounded-2xl p-5 flex flex-col justify-between">
-              <p className="text-muted-foreground text-sm font-medium mb-2">Saldo Total</p>
-              <h4 className={`text-3xl font-bold tracking-tight ${totalBalance < 0 ? 'text-red-400' : 'text-white'}`}>{formatCurrency(totalBalance)}</h4>
-              <div className={`mt-4 flex items-center gap-2 text-xs font-medium w-fit px-2 py-1 rounded-md ${totalBalance < 0 ? 'text-red-400 bg-red-400/10' : 'text-emerald-400 bg-emerald-400/10'}`}>
-                {totalBalance < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
-                {totalBalance < 0 ? 'Saldo Negativo' : 'Atualizado'}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-muted-foreground text-sm font-medium">Mês Atual</p>
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${monthBalance >= 0 ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' : 'text-red-400 bg-red-400/10 border-red-400/20'}`}>
+                  {monthBalance >= 0 ? 'Positivo' : 'Negativo'}
+                </span>
+              </div>
+              <h4 className={`text-2xl font-bold tracking-tight ${monthBalance < 0 ? 'text-red-400' : 'text-white'}`}>{formatCurrency(monthBalance)}</h4>
+              <div className="mt-3 space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="flex items-center gap-1 text-emerald-400"><ArrowUpRight size={12} />{formatCurrency(monthIn)}</span>
+                  <span className="flex items-center gap-1 text-red-400"><ArrowDownRight size={12} />{formatCurrency(monthOut)}</span>
+                </div>
+                {monthIn > 0 && (
+                  <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500/70 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.min((monthIn / (monthIn + monthOut)) * 100, 100)}%` }} />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1100,12 +1200,12 @@ export default function Dashboard() {
             <div className="bg-background/40 border border-white/5 rounded-2xl p-5 flex flex-col">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-muted-foreground text-sm font-medium">Últimos 7 dias</p>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500/70 inline-block" />Receita</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500/70 inline-block" />Despesa</span>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-emerald-500/70 inline-block" /></span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-sm bg-red-500/70 inline-block" /></span>
                 </div>
               </div>
-              <div className="flex items-end gap-1.5 flex-1 min-h-[64px]">
+              <div className="flex items-end gap-1 flex-1 min-h-[64px]">
                 {last7Days.map((d, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
                     <div className="w-full flex flex-col justify-end gap-0.5" style={{ height: 64 }}>
@@ -1127,42 +1227,86 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-              <div className="mt-3 pt-3 border-t border-white/5 flex justify-between text-xs">
-                <span className="flex items-center gap-1 text-emerald-400"><ArrowUpRight size={12} />{formatCurrency(totalIn)}</span>
-                <span className="flex items-center gap-1 text-red-400"><ArrowDownRight size={12} />{formatCurrency(totalOut)}</span>
+              <div className="mt-3 pt-2.5 border-t border-white/5 flex justify-between text-xs text-muted-foreground">
+                <span>Entradas</span>
+                <span>Saídas</span>
               </div>
+            </div>
+
+            {/* Bancos conectados */}
+            <div className="bg-background/40 border border-white/5 rounded-2xl p-5 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-muted-foreground text-sm font-medium">Contas Bancárias</p>
+                {connectedBanks > 0 && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-400/10 border-emerald-400/20 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse" />
+                    Ao vivo
+                  </span>
+                )}
+              </div>
+              {connectedBanks === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center gap-2">
+                  <Building2 size={28} className="text-muted-foreground/30" />
+                  <p className="text-xs text-muted-foreground">Nenhum banco conectado</p>
+                  <Link href="/C4Person/finance" className="text-xs text-primary hover:underline">Conectar →</Link>
+                </div>
+              ) : (
+                <>
+                  <h4 className="text-2xl font-bold tracking-tight text-white">{formatCurrency(assetBankBalance)}</h4>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">{connectedBanks} banco{connectedBanks !== 1 ? 's' : ''} · {bankAccounts.length} conta{bankAccounts.length !== 1 ? 's' : ''}</p>
+                  <div className="space-y-1.5 flex-1">
+                    {Array.from(new Set(bankAccounts.map(b => b.institution_name ?? b.name))).slice(0, 3).map(name => {
+                      const accs = bankAccounts.filter(b => (b.institution_name ?? b.name) === name);
+                      const bal = accs.filter(a => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type)).reduce((s, a) => s + Number(a.balance ?? 0), 0);
+                      return (
+                        <div key={name} className="flex items-center justify-between text-xs">
+                          <span className="flex items-center gap-1.5 text-white/70 truncate max-w-[60%]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                            {name}
+                          </span>
+                          <span className="text-emerald-400 font-medium">{formatCurrency(bal)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {lastBankSync && (
+                    <p className="text-[10px] text-muted-foreground/50 mt-2">
+                      Sync: {format(new Date(lastBankSync), "d MMM HH:mm", { locale: ptBR })}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Transações Recentes */}
             <div className="bg-background/40 border border-white/5 rounded-2xl p-5 flex flex-col">
-              <p className="text-muted-foreground text-sm font-medium mb-4">Transações Recentes</p>
-              <div className="space-y-4">
+              <p className="text-muted-foreground text-sm font-medium mb-3">Recentes</p>
+              <div className="space-y-3 flex-1">
                 {transactions.length === 0 ? (
                   <p className="text-sm text-muted-foreground italic">Nenhuma transação.</p>
                 ) : (
                   transactions.slice(0, 4).map((t) => (
-                    <div key={t.id} className="group flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-white">{t.name}</p>
-                        <p className="text-xs text-muted-foreground">
+                    <div key={t.id} className="group flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-white truncate">{t.name}</p>
+                        <p className="text-[10px] text-muted-foreground">
                           {t.transaction_date ? format(new Date(t.transaction_date), "d MMM", { locale: ptBR }) : 'Hoje'}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-bold ${t.type === 'in' ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {t.type === 'in' ? '+ ' : '- '}
-                          {formatCurrency(Number(t.amount))}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className={`text-xs font-bold ${t.type === 'in' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {t.type === 'in' ? '+' : '-'}{formatCurrency(Number(t.amount))}
                         </span>
                         <button onClick={() => deleteTransaction(t.id)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5">
-                          <Trash2 size={13} />
+                          <Trash2 size={12} />
                         </button>
                       </div>
                     </div>
                   ))
                 )}
               </div>
-              <button onClick={() => setShowFinanceModal(true)} className="mt-5 flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
-                <Plus size={16} /> Nova Transação
+              <button onClick={() => setShowFinanceModal(true)} className="mt-4 flex items-center gap-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                <Plus size={14} /> Nova Transação
               </button>
             </div>
           </div>
