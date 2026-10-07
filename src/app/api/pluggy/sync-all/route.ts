@@ -61,13 +61,19 @@ async function putBankAccount(userId: string, pluggyAccountId: string, payload: 
 }
 
 async function putTransaction(payload: Record<string, unknown>) {
-  const { data: existing } = await supabaseAdmin
+  // Try dedup via pluggy_transaction_id (requires the column to exist in the schema)
+  const { data: existing, error: selErr } = await supabaseAdmin
     .from("transactions")
     .select("id")
     .eq("user_id", payload.user_id as string)
     .eq("pluggy_transaction_id", payload.pluggy_transaction_id as string)
     .maybeSingle();
 
+  if (selErr) {
+    // Column likely not yet migrated — fall back to plain insert without dedup
+    const { pluggy_transaction_id: _id, ...rest } = payload;
+    return supabaseAdmin.from("transactions").insert(rest);
+  }
   if (existing) {
     return supabaseAdmin.from("transactions").update(payload).eq("id", existing.id);
   }
