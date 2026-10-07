@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 import {
   TrendingUp, TrendingDown, Plus, X, RefreshCw,
   AlertCircle, Search, BarChart3, Activity, Wallet, Info,
-  ChevronRight, Building2, ArrowUpRight, ArrowDownRight,
+  ChevronRight, ChevronDown, Building2, ArrowUpRight, ArrowDownRight, Tv,
 } from "lucide-react";
 
 // ── Finance sub-nav ──────────────────────────────────────────────────────────
@@ -188,6 +188,57 @@ function MiniOHLC({ data, w = 300, h = 80 }: { data: HistoricalPoint[]; w?: numb
         );
       })}
     </svg>
+  );
+}
+
+// ── CNN Business live player ──────────────────────────────────────────────────
+// YouTube live_stream endpoint: embeds whatever is currently live on the channel.
+// CNN Money Brasil (@cnnbrmoney) — canal oficial no YouTube
+const CNN_EMBED_URL =
+  "https://www.youtube.com/embed/live_stream?channel=UCTkXRDQl0luXxVQrRQvWS6w&autoplay=0&rel=0&modestbranding=1";
+
+function LivePlayer() {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="rounded-2xl overflow-hidden border border-white/10 bg-white/3 shadow-lg">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-white/3 border-b border-white/8">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <div className="w-2 h-2 rounded-full bg-red-500" />
+            <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-60" />
+          </div>
+          <Tv size={12} className="text-muted-foreground" />
+          <span className="text-xs font-semibold text-white">CNN Money Brasil</span>
+          <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
+            Live
+          </span>
+        </div>
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-white transition-colors"
+        >
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </button>
+      </div>
+      {/* Player */}
+      {open && (
+        <div className="aspect-video bg-black">
+          <iframe
+            src={CNN_EMBED_URL}
+            title="CNN Money Brasil Live"
+            className="w-full h-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+          />
+        </div>
+      )}
+      {!open && (
+        <div className="px-4 py-2 text-[10px] text-muted-foreground">
+          Clique ▲ para abrir o player
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -373,9 +424,28 @@ export default function BolsaPage() {
 
   const allLoading = tickers.some(t => states[t]?.loading);
 
+  // Persist latest prices to localStorage so dashboard can show an overview
+  useEffect(() => {
+    if (loadedQuotes.length === 0) return;
+    const cache: Record<string, { price: number; change: number; name: string }> = {};
+    loadedQuotes.forEach(q => {
+      if (q.symbol) cache[q.symbol] = {
+        price: q.regularMarketPrice ?? 0,
+        change: q.regularMarketChangePercent ?? 0,
+        name: q.shortName ?? q.symbol,
+      };
+    });
+    try { localStorage.setItem("c4p_bolsa_cache", JSON.stringify(cache)); } catch {}
+  }, [loadedQuotes]);
+
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-5xl 2xl:max-w-6xl mx-auto">
+    <div className="p-4 md:p-6 lg:p-8 max-w-6xl 2xl:max-w-7xl mx-auto">
       <FinanceNav />
+
+      {/* Two-column layout: main content | live player sidebar */}
+      <div className="flex flex-col xl:flex-row gap-4 xl:gap-6 items-start">
+      {/* ── Main content column ── */}
+      <div className="flex-1 min-w-0">
 
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
@@ -770,6 +840,25 @@ export default function BolsaPage() {
           </p>
         </div>
       )}
+
+      </div>{/* end main content column */}
+
+      {/* ── Live player sidebar ── */}
+      <div className="w-full xl:w-80 2xl:w-96 shrink-0 xl:sticky xl:top-4 space-y-3">
+        <LivePlayer />
+        <p className="text-[10px] text-muted-foreground text-center px-2 leading-relaxed">
+          CNN Money Brasil ao vivo via YouTube ·{" "}
+          <a
+            href="https://www.youtube.com/@cnnbrmoney"
+            target="_blank" rel="noreferrer"
+            className="text-primary hover:underline"
+          >
+            abrir canal
+          </a>
+        </p>
+      </div>
+
+      </div>{/* end two-column flex */}
     </div>
   );
 }
