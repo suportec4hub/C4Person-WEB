@@ -58,6 +58,99 @@ function FinanceNav() {
   );
 }
 
+// ── Bolsa mini-overview (reads last-known prices from localStorage cache) ────
+type BolsaCache = Record<string, { price: number; change: number; name: string }>;
+
+function getMarketOpenB3(): boolean {
+  const brt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const d = brt.getDay();
+  if (d === 0 || d === 6) return false;
+  const t = brt.getHours() * 60 + brt.getMinutes();
+  return t >= 10 * 60 && t < 17 * 60 + 55;
+}
+
+function BolsaOverview() {
+  const [cache, setCache] = useState<BolsaCache>({});
+  const [open, setOpen] = useState(true);
+  const isOpen = getMarketOpenB3();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("c4p_bolsa_cache");
+      if (raw) setCache(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  const items = Object.entries(cache);
+  if (items.length === 0) return null;
+
+  const sorted = [...items].sort((a, b) => Math.abs(b[1].change) - Math.abs(a[1].change));
+
+  return (
+    <div className="mb-8 rounded-2xl border border-white/8 bg-white/3 overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/3 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3">
+          <TrendingUp size={14} className="text-emerald-400" />
+          <span className="text-sm font-semibold text-white">Bolsa de Valores</span>
+          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+            isOpen
+              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+              : "bg-white/8 text-muted-foreground border border-white/10"
+          }`}>
+            {isOpen ? "Aberto" : "Fechado"}
+          </span>
+          <span className="text-[10px] text-muted-foreground hidden sm:block">B3 · 10:00–17:55</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/C4Person/finance/bolsa"
+            onClick={e => e.stopPropagation()}
+            className="text-[11px] text-primary hover:underline font-medium"
+          >
+            Ver tudo →
+          </Link>
+          <div className={`w-5 h-5 rounded-full bg-white/5 border border-white/8 flex items-center justify-center transition-transform duration-200 ${open ? "rotate-90" : ""}`}>
+            <ChevronRight size={11} className="text-muted-foreground" />
+          </div>
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-white/8">
+          <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-none">
+            {sorted.map(([symbol, q]) => {
+              const pos = q.change >= 0;
+              return (
+                <Link
+                  key={symbol}
+                  href="/C4Person/finance/bolsa"
+                  className="shrink-0 flex flex-col items-start gap-1 px-3 py-2.5 rounded-xl bg-white/4 border border-white/8 hover:bg-white/8 hover:border-white/15 transition-all min-w-[90px]"
+                >
+                  <span className="text-[11px] font-bold text-white">{symbol}</span>
+                  <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{q.name}</span>
+                  <span className="text-sm font-bold text-white leading-none">
+                    {new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(q.price)}
+                  </span>
+                  <span className={`text-[10px] font-bold ${pos ? "text-emerald-400" : "text-red-400"}`}>
+                    {pos ? "▲" : "▼"} {Math.abs(q.change).toFixed(2)}%
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+          <p className="text-[9px] text-muted-foreground mt-2.5">
+            Dados em cache da última visita à aba Bolsa · atualizados a cada 30 min
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface Transaction {
   id: string;
   name: string;
@@ -1403,6 +1496,9 @@ export default function FinancePage() {
           </motion.div>
         ))}
       </div>
+
+      {/* ── Bolsa Overview Widget ── */}
+      <BolsaOverview />
 
       {/* ── Financial Health Dashboard ── */}
       {(() => {
