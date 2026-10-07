@@ -157,12 +157,9 @@ export async function POST(req: Request) {
 
     const { results: accounts } = await pluggy.fetchAccounts(itemId);
 
-    // Current month start for transaction history (always fetch from month start)
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    // Also fetch 2 extra months back on first sync to build history
-    const from = new Date(now.getFullYear(), now.getMonth() - 12, 1);
-    const fromStr = from.toISOString().split("T")[0];
+    // 12-month lookback for full history
+    const dateFrom = new Date(now.getFullYear(), now.getMonth() - 12, 1).toISOString().split("T")[0];
 
     let importedDebts    = 0;
     let importedTx       = 0;
@@ -218,33 +215,29 @@ export async function POST(req: Request) {
         }
       }
 
-      // ── Transactions — paginate through all pages ──────────────────────────
+      // ── Transactions — fetchAllTransactions handles cursor pagination ───────
       try {
-        let page = 1;
-        let totalPages = 1;
-        do {
-          const txPage = await pluggy.fetchTransactions(acc.id, { from: fromStr, page, pageSize: 500 } as any);
-          totalPages = (txPage as any).totalPages ?? 1;
-          for (const tx of (txPage.results ?? [])) {
-            // Pluggy v2: transaction.type "CREDIT" = money coming in, "DEBIT" = going out
-            const txType = (tx as any).type === "CREDIT" ? "in" : "out";
-            const { error } = await putTransaction({
-              user_id:                user.id,
-              pluggy_transaction_id:  (tx as any).id,
-              name:                   (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
-              amount:                 Math.abs(Number((tx as any).amount ?? 0)),
-              type:                   txType,
-              category:               (tx as any).category ?? null,
-              transaction_date:       (tx as any).date
-                ? new Date((tx as any).date).toISOString().split("T")[0]
-                : now.toISOString().split("T")[0],
-              source:                 "pluggy",
-              payment_source:         [acc.name ?? institutionName ?? "Banco"],
-            });
-            if (!error) importedTx++;
-          }
-          page++;
-        } while (page <= totalPages);
+        // SDK 0.91+: fetchAllTransactions uses cursor-based pagination internally.
+        // dateFrom (not from) is the correct filter key for the v2 cursor endpoint.
+        const txList = await pluggy.fetchAllTransactions(acc.id, { dateFrom } as any);
+        for (const tx of txList ?? []) {
+          // Pluggy v2: transaction.type "CREDIT" = money coming in, "DEBIT" = going out
+          const txType = (tx as any).type === "CREDIT" ? "in" : "out";
+          const { error } = await putTransaction({
+            user_id:                user.id,
+            pluggy_transaction_id:  (tx as any).id,
+            name:                   (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
+            amount:                 Math.abs(Number((tx as any).amount ?? 0)),
+            type:                   txType,
+            category:               (tx as any).category ?? null,
+            transaction_date:       (tx as any).date
+              ? new Date((tx as any).date).toISOString().split("T")[0]
+              : now.toISOString().split("T")[0],
+            source:                 "pluggy",
+            payment_source:         [acc.name ?? institutionName ?? "Banco"],
+          });
+          if (!error) importedTx++;
+        }
       } catch {
         // This account type doesn't support transaction listing — skip silently
       }
