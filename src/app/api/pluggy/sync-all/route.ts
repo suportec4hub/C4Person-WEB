@@ -8,6 +8,16 @@ import { cookies } from "next/headers";
 // We accept both so the route works regardless of SDK version.
 const DEBT_TYPES = new Set(["CREDIT", "CREDIT_CARD", "LOAN", "FINANCING"]);
 
+// If the account name starts with a bank-sounding keyword, treat it as the institution name.
+// This handles Pluggy's test connector "MeuPluggy" which gives accounts named "BANCO INTER",
+// "Banco Bradesco", etc. For real connectors the account name is a product name like
+// "Conta Corrente" and we fall back to the connector name (which IS the bank name).
+const BANK_PREFIX_RE = /^(banco|bco|bank|caixa|nubank|inter|bradesco|itau|ita(ú|u)|santander|sicoob|sicredi|c6\s|c6bank|picpay|bmg|safra|votorantim|original|pan\s|banpara|banrisul|next|neon|will|stone|mercado\s*pago)/i;
+function resolveInstitution(accountName: string, connectorName: string | null): string | null {
+  if (accountName && BANK_PREFIX_RE.test(accountName.trim())) return accountName;
+  return connectorName;
+}
+
 const supabaseAdmin = (() => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -131,7 +141,7 @@ export async function POST(req: Request) {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     // Also fetch 2 extra months back on first sync to build history
-    const from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const from = new Date(now.getFullYear(), now.getMonth() - 12, 1);
     const fromStr = from.toISOString().split("T")[0];
 
     let importedDebts    = 0;
@@ -150,7 +160,7 @@ export async function POST(req: Request) {
           type:                  acc.type,
           subtype:               (acc as any).subtype ?? null,
           balance:               Number(acc.balance ?? 0),
-          institution_name:      institutionName,
+          institution_name:      resolveInstitution(acc.name ?? "", institutionName),
           institution_logo_url:  institutionLogoUrl,
           credit_limit:          acc.creditData?.creditLimit          != null ? Number(acc.creditData.creditLimit)            : null,
           available_credit:      acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit)   : null,
