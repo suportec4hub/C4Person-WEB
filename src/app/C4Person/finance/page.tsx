@@ -312,12 +312,9 @@ export default function FinancePage() {
   }, []);
 
   /* ── derived: transactions filtered to viewMonth ── */
-  // Pluggy-imported transactions are excluded from income/expense balance to avoid
-  // double-counting with manual entries. They appear only in the bank accounts section.
   const monthlyTx = useMemo(() =>
     transactions.filter(t => {
       if (!t.transaction_date) return false;
-      if (t.source === "pluggy") return false;
       try { return isSameMonth(parseISO(t.transaction_date), viewMonth); } catch { return false; }
     }),
     [transactions, viewMonth]
@@ -334,8 +331,7 @@ export default function FinancePage() {
       const d = subMonths(new Date(), 5 - i);
       const key = format(d, "yyyy-MM");
       const month = transactions.filter(t =>
-        t.transaction_date && t.source !== "pluggy" &&
-        format(parseISO(t.transaction_date), "yyyy-MM") === key
+        t.transaction_date && format(parseISO(t.transaction_date), "yyyy-MM") === key
       );
       return {
         label: format(d, "MMM", { locale: ptBR }),
@@ -1063,6 +1059,13 @@ export default function FinancePage() {
       setPluggyCredSaving(false);
     }
   }, [pluggyClientId, pluggyClientSecret, userId, undoToast]);
+
+  const clearManualDuplicates = useCallback(async () => {
+    if (!confirm("Isso vai apagar todas as transações lançadas manualmente (source = manual) para limpar duplicatas com o Pluggy. Continuar?")) return;
+    await supabase.from("transactions").delete().eq("user_id", userId).eq("source", "manual");
+    setTransactions(prev => prev.filter(t => t.source === "pluggy"));
+    undoToast("Transações manuais removidas. O saldo agora reflete apenas os bancos.", () => {});
+  }, [userId, undoToast]);
 
   const clearOrphanedPluggyItems = useCallback(async () => {
     await supabase.from("pluggy_items").delete().eq("user_id", userId);
@@ -2832,6 +2835,15 @@ export default function FinancePage() {
                       >
                         {pluggyCredSaving ? "Salvando…" : "Salvar credenciais"}
                       </button>
+                      {bankAccounts.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={clearManualDuplicates}
+                          className="w-full py-2 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 text-xs font-semibold transition-colors border border-amber-500/20"
+                        >
+                          Apagar lançamentos manuais (usar só bancos)
+                        </button>
+                      )}
                       {profile.pluggy_client_id && (
                         <button
                           type="button"
