@@ -5,83 +5,137 @@ export interface NewsItem {
   title: string;
   url: string;
   source: string;
-  publishedAt: string; // ISO
+  publishedAt: string;
   category: "economia" | "tecnologia";
 }
 
-// Google News RSS topic URLs (PT-BR / Brasil)
-const FEEDS = [
-  {
-    category: "economia" as const,
-    // Google News "Business" topic for Brazil
-    url: "https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtcHlLQUFQAQ?hl=pt-BR&gl=BR&ceid=BR:pt-BR",
-  },
-  {
-    category: "tecnologia" as const,
-    // Google News "Technology" topic for Brazil
-    url: "https://news.google.com/rss/topics/CAAqKggKIiRDQkFTRlFvSUwyMHZNRGRqTVhZU0FtcHlLQUFQAVgAKAAqAA?hl=pt-BR&gl=BR&ceid=BR:pt-BR",
-  },
-];
+// Multiple RSS sources per category — tried in order until one succeeds
+const SOURCES = {
+  economia: [
+    // Google News keyword search (search-based URLs are stable)
+    "https://news.google.com/rss/search?q=economia+bolsa+mercado+financeiro+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-BR",
+    // G1 Economia (Globo — very reliable, always online)
+    "https://g1.globo.com/rss/g1/economia/",
+    // Fallback keyword variant
+    "https://news.google.com/rss/search?q=mercado+financeiro+acoes+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-BR",
+  ],
+  tecnologia: [
+    "https://news.google.com/rss/search?q=tecnologia+inteligencia+artificial+startups+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-BR",
+    // G1 Tech
+    "https://g1.globo.com/rss/g1/tecnologia/",
+    "https://news.google.com/rss/search?q=tecnologia+inovacao+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-BR",
+  ],
+};
 
-// Simple XML extraction — no dependencies needed
-function extractItems(xml: string, category: "economia" | "tecnologia"): NewsItem[] {
+const FETCH_HEADERS = {
+  // Identify as a feed reader so news sites don't redirect to HTML
+  "User-Agent": "Feedfetcher-Google; (+http://www.google.com/feedfetcher.html; 1 subscribers; feed-id=1)",
+  "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+  "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+  "Cache-Control": "no-cache",
+};
+
+/** Extract text inside a tag, handling both CDATA and raw text, decode basic entities */
+function extractTag(block: string, tag: string): string {
+  const re = new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([\\s\\S]*?))<\\/${tag}>`, "i");
+  const m = block.match(re);
+  const raw = (m?.[1] ?? m?.[2] ?? "").trim();
+  return raw
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#39;/g, "'")
+    .replace(/<[^>]+>/g, ""); // strip any inline HTML
+}
+
+function extractAttr(block: string, tag: string, attr: string): string {
+  const re = new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, "i");
+  return block.match(re)?.[1] ?? "";
+}
+
+function parseItems(xml: string, category: "economia" | "tecnologia"): NewsItem[] {
   const items: NewsItem[] = [];
-  const itemRe = /<item>([\s\S]*?)<\/item>/g;
+  const itemRe = /<item>([\s\S]*?)<\/item>/gi;
   let m;
   while ((m = itemRe.exec(xml)) !== null) {
     const block = m[1];
 
-    const titleM = block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) ||
-                   block.match(/<title[^>]*>([\s\S]*?)<\/title>/);
-    const linkM  = block.match(/<link>([\s\S]*?)<\/link>/) ||
-                   block.match(/<link\s+href="([^"]+)"/);
-    const dateM  = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
-    const srcM   = block.match(/<source[^>]*>([\s\S]*?)<\/source>/);
+    let title = extractTag(block, "title");
+    // Google News format: "Headline - Source Name" — strip the source suffix
+    const dashIdx = title.lastIndexOf(" - ");
+    const sourceSuffix = dashIdx > 30 ? title.slice(dashIdx + 3) : "";
+    if (dashIdx > 30) title = title.slice(0, dashIdx);
 
-    const title = titleM?.[1]?.trim().replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"') ?? "";
-    const url   = linkM?.[1]?.trim() ?? "";
-    const src   = srcM?.[1]?.trim().replace(/<!\[CDATA\[(.*?)\]\]>/, "$1").replace(/&amp;/g, "&") ?? "";
-    let   iso   = "";
-    try { iso = dateM?.[1] ? new Date(dateM[1]).toISOString() : ""; } catch { iso = ""; }
+    // Link: try <link>...</link>, then <link href="..."/>
+    let url = extractTag(block, "link");
+    if (!url) url = extractAttr(block, "link", "href");
+    // In some RSS formats link is right after </title> without being inside tags
+    if (!url) {
+      const linkRe = /<link\s*\/?>[\s]*([^\s<]+)/i;
+      url = block.match(linkRe)?.[1] ?? "";
+    }
 
-    if (title && url) items.push({ title, url, source: src, publishedAt: iso, category });
-    if (items.length >= 12) break;
+    const pubDate = extractTag(block, "pubDate") || extractTag(block, "published") || extractTag(block, "dc:date");
+    const source  = extractTag(block, "source") || extractAttr(block, "source", "url") || sourceSuffix;
+
+    let iso = "";
+    try { iso = pubDate ? new Date(pubDate).toISOString() : ""; } catch { iso = ""; }
+
+    if (title && url) {
+      items.push({ title: title.trim(), url: url.trim(), source: source.trim(), publishedAt: iso, category });
+    }
+    if (items.length >= 15) break;
   }
   return items;
 }
 
-// Module-level cache — survives hot-reloads in dev, shared across requests in prod
+async function fetchFeed(url: string, category: "economia" | "tecnologia"): Promise<NewsItem[]> {
+  const res = await fetch(url, {
+    headers: FETCH_HEADERS,
+    redirect: "follow",
+    signal: AbortSignal.timeout(9000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  // Verify it's actually XML/RSS, not an HTML error page
+  if (!text.includes("<item>") && !text.includes("<entry>")) {
+    throw new Error("Not RSS");
+  }
+  const parsed = parseItems(text, category);
+  if (parsed.length === 0) throw new Error("No items parsed");
+  return parsed;
+}
+
+async function fetchBestFeed(category: "economia" | "tecnologia"): Promise<NewsItem[]> {
+  const urls = SOURCES[category];
+  let lastErr = "";
+  for (const url of urls) {
+    try {
+      const items = await fetchFeed(url, category);
+      return items;
+    } catch (e: any) {
+      lastErr = e?.message ?? "fetch failed";
+    }
+  }
+  throw new Error(`All feeds failed for ${category}: ${lastErr}`);
+}
+
+// Module-level cache survives hot-reloads in dev, shared across requests in prod
 let cache: { items: NewsItem[]; ts: number } = { items: [], ts: 0 };
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL = 45 * 60 * 1000; // 45 minutes
 
 export async function GET() {
   if (cache.items.length > 0 && Date.now() - cache.ts < CACHE_TTL) {
     return NextResponse.json({ items: cache.items, cached: true });
   }
 
-  const results = await Promise.allSettled(
-    FEEDS.map(async ({ url, category }) => {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; Feedfetcher-Google; +http://www.google.com/feedfetcher.html)",
-          "Accept": "application/rss+xml, application/xml, text/xml",
-        },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const xml = await res.text();
-      return extractItems(xml, category);
-    })
-  );
+  const [ecoResult, techResult] = await Promise.allSettled([
+    fetchBestFeed("economia"),
+    fetchBestFeed("tecnologia"),
+  ]);
 
-  const items: NewsItem[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled") items.push(...r.value);
-  }
+  const eco  = ecoResult.status  === "fulfilled" ? ecoResult.value  : [];
+  const tech = techResult.status === "fulfilled" ? techResult.value : [];
 
-  // Interleave categories for balanced display
-  const eco  = items.filter(i => i.category === "economia");
-  const tech = items.filter(i => i.category === "tecnologia");
+  // Interleave categories so both appear throughout the carousel
   const interleaved: NewsItem[] = [];
   const maxLen = Math.max(eco.length, tech.length);
   for (let i = 0; i < maxLen; i++) {
@@ -93,9 +147,14 @@ export async function GET() {
     cache = { items: interleaved, ts: Date.now() };
   }
 
+  const errors: string[] = [];
+  if (ecoResult.status  === "rejected") errors.push(`eco: ${ecoResult.reason}`);
+  if (techResult.status === "rejected") errors.push(`tech: ${techResult.reason}`);
+
   return NextResponse.json({
     items: interleaved,
     cached: false,
     fetchedAt: new Date().toISOString(),
+    ...(errors.length ? { errors } : {}),
   });
 }

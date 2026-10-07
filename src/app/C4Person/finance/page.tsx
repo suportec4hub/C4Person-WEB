@@ -247,7 +247,8 @@ export default function FinancePage() {
 
   /* ── profile / salary / partner ── */
   const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null, pluggy_item_id: null, pluggy_client_id: null, pluggy_client_secret: null, last_pluggy_sync_at: null });
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [bankAccounts, setBankAccounts]   = useState<BankAccount[]>([]);
+  const [pluggyItems, setPluggyItems]     = useState<{ item_id: string; institution_name: string | null; institution_logo_url: string | null }[]>([]);
   const [pluggyConnecting, setPluggyConnecting] = useState(false);
   const [pluggySyncing, setPluggySyncing] = useState(false);
   const [pluggyToken, setPluggyToken] = useState<string | null>(null);
@@ -279,16 +280,18 @@ export default function FinancePage() {
   const [debtAiLoading, setDebtAiLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [txRes, budRes, debtRes, baRes] = await Promise.all([
+    const [txRes, budRes, debtRes, baRes, piRes] = await Promise.all([
       supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
       supabase.from("budgets").select("*").order("created_at", { ascending: true }),
       supabase.from("debts").select("*").order("created_at", { ascending: true }),
       supabase.from("bank_accounts").select("*").order("institution_name", { ascending: true }),
+      supabase.from("pluggy_items").select("item_id, institution_name, institution_logo_url"),
     ]);
     if (txRes.data)   setTransactions(txRes.data as Transaction[]);
     if (budRes.data)  setBudgets(budRes.data as Budget[]);
     if (debtRes.data) setDebts(debtRes.data as Debt[]);
     if (baRes.data)   setBankAccounts(baRes.data as BankAccount[]);
+    if (piRes.data)   setPluggyItems(piRes.data as { item_id: string; institution_name: string | null; institution_logo_url: string | null }[]);
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
@@ -298,8 +301,12 @@ export default function FinancePage() {
       setPluggyClientId(data.pluggy_client_id ?? "");
       setPluggyClientSecret(data.pluggy_client_secret ?? "");
     }
-    const { data: baData } = await supabase.from("bank_accounts").select("*").eq("user_id", uid).order("name");
-    if (baData) setBankAccounts(baData as BankAccount[]);
+    const [baRes, piRes] = await Promise.all([
+      supabase.from("bank_accounts").select("*").eq("user_id", uid).order("name"),
+      supabase.from("pluggy_items").select("item_id, institution_name, institution_logo_url").eq("user_id", uid),
+    ]);
+    if (baRes.data) setBankAccounts(baRes.data as BankAccount[]);
+    if (piRes.data) setPluggyItems(piRes.data as { item_id: string; institution_name: string | null; institution_logo_url: string | null }[]);
   }, []);
 
   /* ── derived: transactions filtered to viewMonth ── */
@@ -1068,14 +1075,18 @@ export default function FinancePage() {
     }
   }, [userId, undoToast]);
 
-  const connectPluggy = useCallback(async () => {
+  const connectPluggy = useCallback(async (reconnectItemId?: string) => {
     setPluggyConnecting(true);
     try {
-      const res = await fetch("/api/pluggy/connect-token", { method: "POST" });
+      const res = await fetch("/api/pluggy/connect-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reconnectItemId ? { itemId: reconnectItemId } : {}),
+      });
       const { accessToken, error } = await res.json();
       if (error || !accessToken) throw new Error(error ?? "Erro ao gerar token");
       setPluggyToken(accessToken);
-    } catch (err) {
+    } catch {
       undoToast("Erro ao conectar Open Finance. Verifique as credenciais Pluggy.", () => {});
     } finally {
       setPluggyConnecting(false);
@@ -1133,9 +1144,9 @@ export default function FinancePage() {
       ].filter(Boolean);
 
       if (errorCount === itemIds.length) {
-        // All items failed — probably expired connections
+        // All items failed — probably expired connections; fetchData updated pluggyItems so UI shows reconnect buttons
         const hint = firstErrors[0] ? `: ${firstErrors[0]}` : "";
-        undoToast(`Conexão expirada. Reconecte os bancos via "Adicionar banco"${hint}.`, () => {});
+        undoToast(`Conexão expirada. Use "Reconectar" em cada banco abaixo${hint}.`, () => {});
       } else if (errorCount > 0) {
         undoToast(
           parts.length
@@ -1161,21 +1172,32 @@ export default function FinancePage() {
   const [removingBank, setRemovingBank] = useState<string | null>(null);
 
   const removeBankGroup = useCallback(async (accountIds: string[], bankDisplayName: string) => {
-    if (!confirm(`Remover "${bankDisplayName}" e todos os seus dados importados?`)) return;
+    if (!confirm(`Remover "${bankDisplayName}" e todos os seus dados importados? A conexão Pluggy também será desvinculada.`)) return;
     setRemovingBank(accountIds[0] ?? null);
     try {
+      // Gather institution_names from the accounts being deleted so we can clean up pluggy_items too
+      const toDelete = bankAccounts.filter(ba => accountIds.includes(ba.pluggy_account_id));
+      const instNames = [...new Set(toDelete.map(ba => ba.institution_name).filter(Boolean) as string[])];
+
+      // 1. Delete bank_accounts rows
       for (const id of accountIds) {
         await supabase.from("bank_accounts").delete().eq("pluggy_account_id", id);
       }
+
+      // 2. Delete matching pluggy_items by institution_name so expired items don't block future syncs
+      if (instNames.length > 0) {
+        await supabase.from("pluggy_items").delete().in("institution_name", instNames);
+      }
+
       setExpandedBank(prev => (prev === bankDisplayName ? null : prev));
       await fetchData();
-      undoToast("Banco removido.", () => {});
+      undoToast("Banco e conexão Pluggy removidos.", () => {});
     } catch {
       undoToast("Erro ao remover banco.", () => {});
     } finally {
       setRemovingBank(null);
     }
-  }, [fetchData, undoToast]);
+  }, [bankAccounts, fetchData, undoToast]);
 
   const handlePluggySuccess = useCallback(async (itemData: any) => {
     setPluggyToken(null);
@@ -2014,7 +2036,7 @@ export default function FinancePage() {
                 </button>
               )}
               <button
-                onClick={connectPluggy}
+                onClick={() => connectPluggy()}
                 disabled={pluggyConnecting || pluggySyncing}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50 font-medium"
               >
@@ -2025,22 +2047,58 @@ export default function FinancePage() {
           </div>
         </div>
 
-        {/* Empty state with Pluggy CTA */}
+        {/* Empty state / reconnect UI */}
         {activeDebts.length === 0 && (
-          <div className="glass-card p-8 flex flex-col items-center text-center gap-4">
+          <div className="glass-card p-6 flex flex-col items-center text-center gap-4">
             <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
               <CreditCard size={24} className="text-blue-400" />
             </div>
             <div>
-              <p className="text-white font-semibold mb-1">Nenhuma dívida cadastrada</p>
+              <p className="text-white font-semibold mb-1">Nenhuma conta importada</p>
               <p className="text-sm text-muted-foreground">
                 {!profile.pluggy_client_id
                   ? "Configure suas credenciais Pluggy em Configurações → Dívidas para conectar seu banco."
-                  : bankAccounts.length === 0
-                  ? "Seus bancos estão configurados mas os dados não foram importados. Clique em Sincronizar para reimportar."
-                  : "Conecte seu banco via Open Finance para importar dívidas automaticamente."}
+                  : pluggyItems.length > 0
+                  ? "Suas conexões estão salvas mas precisam ser reativadas. Clique em Reconectar em cada banco abaixo."
+                  : "Conecte seu banco via Open Finance para importar dados automaticamente."}
               </p>
             </div>
+
+            {/* Expired connections — show reconnect buttons per item */}
+            {pluggyItems.length > 0 && bankAccounts.length === 0 && (
+              <div className="w-full space-y-2">
+                {pluggyItems.map(item => (
+                  <div key={item.item_id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                    {item.institution_logo_url ? (
+                      <div className="w-8 h-8 rounded-lg bg-white p-1 shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={item.institution_logo_url} alt={item.institution_name ?? ""} className="w-full h-full object-contain" />
+                      </div>
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-400 text-xs font-bold">
+                        {(item.institution_name ?? "?")[0]?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 text-left">
+                      <p className="text-sm font-medium text-white">{item.institution_name ?? "Banco"}</p>
+                      <p className="text-[10px] text-amber-400">Conexão expirada — precisa reautenticar</p>
+                    </div>
+                    <button
+                      onClick={() => connectPluggy(item.item_id)}
+                      disabled={pluggyConnecting}
+                      className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 font-medium transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw size={10} className={pluggyConnecting ? "animate-spin" : ""} />
+                      Reconectar
+                    </button>
+                  </div>
+                ))}
+                <p className="text-[10px] text-muted-foreground text-center pt-1">
+                  Ou use "Adicionar banco" acima para conectar uma nova conta
+                </p>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
               {!profile.pluggy_client_id ? (
                 <button
@@ -2050,26 +2108,16 @@ export default function FinancePage() {
                   <Sparkles size={14} />
                   Configurar Open Finance
                 </button>
-              ) : bankAccounts.length === 0 ? (
-                /* Banks configured but no accounts in DB → sync first */
+              ) : pluggyItems.length === 0 ? (
                 <button
-                  onClick={resyncPluggy}
-                  disabled={pluggySyncing}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw size={14} className={pluggySyncing ? "animate-spin" : ""} />
-                  {pluggySyncing ? "Sincronizando…" : "Sincronizar bancos"}
-                </button>
-              ) : (
-                <button
-                  onClick={connectPluggy}
+                  onClick={() => connectPluggy()}
                   disabled={pluggyConnecting || pluggySyncing}
                   className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
                 >
-                  <Sparkles size={14} />
-                  {pluggyConnecting ? "Conectando…" : pluggySyncing ? "Importando…" : "Conectar banco"}
+                  <Plus size={14} />
+                  {pluggyConnecting ? "Conectando…" : "Conectar banco"}
                 </button>
-              )}
+              ) : null}
               <button
                 onClick={() => { setShowSettings(true); setSettingsTab("debts"); }}
                 className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground text-sm transition-colors border border-white/10"

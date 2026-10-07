@@ -66,6 +66,20 @@ export async function POST(req: Request) {
 
     // Fetch item to get institution name + logo from connector
     const item = await pluggy.fetchItem(itemId);
+
+    // Pluggy item status values that require user re-authentication
+    const EXPIRED_STATUSES = new Set(["LOGIN_ERROR", "WAITING_USER_INPUT", "OUTDATED"]);
+    const itemStatus = (item as any).status ?? "";
+    if (EXPIRED_STATUSES.has(itemStatus)) {
+      const institutionName = item.connector?.name ?? "banco";
+      return NextResponse.json({
+        error: `${institutionName} precisa ser reconectado (status: ${itemStatus})`,
+        needsReconnect: true,
+        itemId,
+        importedAccounts: 0, importedTx: 0, importedDebts: 0,
+      });
+    }
+
     const institutionName    = item.connector?.name     ?? null;
     const institutionLogoUrl = (item.connector as any)?.imageUrl ?? null;
 

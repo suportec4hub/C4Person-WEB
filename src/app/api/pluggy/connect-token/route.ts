@@ -12,7 +12,9 @@ const supabaseAdmin = (() => {
   return createClient(url, key);
 })();
 
-export async function POST() {
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const reconnectItemId = (body?.itemId as string) || undefined;
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,8 +52,11 @@ export async function POST() {
 
   try {
     const pluggy = new PluggyClient({ clientId, clientSecret });
+    // If reconnectItemId is provided, PluggyConnect will pre-fill the connector
+    // for re-authentication of that specific expired item.
     const token = await pluggy.createConnectToken(undefined, {
       clientUserId: user.id,
+      ...(reconnectItemId ? { itemId: reconnectItemId } : {}),
     } as any);
     return NextResponse.json({ accessToken: token.accessToken });
   } catch (err: any) {
