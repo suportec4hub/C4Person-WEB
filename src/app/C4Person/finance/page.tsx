@@ -1059,17 +1059,28 @@ export default function FinancePage() {
   }, [pluggyClientId, pluggyClientSecret, userId, undoToast]);
 
   const disconnectPluggy = useCallback(async () => {
+    if (!confirm("Remover credenciais e limpar todos os dados bancários importados do Pluggy?")) return;
     setPluggyDisconnecting(true);
     try {
+      // 1. Clear credentials in profiles
       await supabase.from("profiles").update({
         pluggy_client_id: null,
         pluggy_client_secret: null,
         pluggy_item_id: null,
       }).eq("id", userId);
+
+      // 2. Delete all bank accounts (all come from Pluggy in this app)
+      await supabase.from("bank_accounts").delete().eq("user_id", userId);
+
+      // 3. Delete all pluggy_items records
+      await supabase.from("pluggy_items").delete().eq("user_id", userId);
+
       setProfile(p => ({ ...p, pluggy_client_id: null, pluggy_client_secret: null, pluggy_item_id: null }));
+      setBankAccounts([]);
+      setPluggyItems([]);
       setPluggyClientId("");
       setPluggyClientSecret("");
-      undoToast("Credenciais Pluggy removidas.", () => {});
+      undoToast("Credenciais e dados Pluggy removidos.", () => {});
     } finally {
       setPluggyDisconnecting(false);
     }
@@ -1175,7 +1186,6 @@ export default function FinancePage() {
     if (!confirm(`Remover "${bankDisplayName}" e todos os seus dados importados? A conexão Pluggy também será desvinculada.`)) return;
     setRemovingBank(accountIds[0] ?? null);
     try {
-      // Gather institution_names from the accounts being deleted so we can clean up pluggy_items too
       const toDelete = bankAccounts.filter(ba => accountIds.includes(ba.pluggy_account_id));
       const instNames = [...new Set(toDelete.map(ba => ba.institution_name).filter(Boolean) as string[])];
 
@@ -1184,8 +1194,13 @@ export default function FinancePage() {
         await supabase.from("bank_accounts").delete().eq("pluggy_account_id", id);
       }
 
-      // 2. Delete matching pluggy_items by institution_name so expired items don't block future syncs
-      if (instNames.length > 0) {
+      // 2. Delete matching pluggy_items — prefer item_id match (more reliable than institution_name)
+      const itemIdsToDelete = pluggyItems
+        .filter(pi => instNames.includes(pi.institution_name ?? "") || instNames.length === 0)
+        .map(pi => pi.item_id);
+      if (itemIdsToDelete.length > 0) {
+        await supabase.from("pluggy_items").delete().in("item_id", itemIdsToDelete);
+      } else if (instNames.length > 0) {
         await supabase.from("pluggy_items").delete().in("institution_name", instNames);
       }
 
@@ -1197,7 +1212,7 @@ export default function FinancePage() {
     } finally {
       setRemovingBank(null);
     }
-  }, [bankAccounts, fetchData, undoToast]);
+  }, [bankAccounts, pluggyItems, fetchData, undoToast]);
 
   const handlePluggySuccess = useCallback(async (itemData: any) => {
     setPluggyToken(null);
