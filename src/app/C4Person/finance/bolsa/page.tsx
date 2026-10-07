@@ -22,20 +22,22 @@ const FINANCE_TABS = [
 function FinanceNav() {
   const pathname = usePathname();
   return (
-    <div className="flex items-center gap-1 mb-6 bg-white/3 border border-white/8 rounded-2xl p-1.5 w-fit">
-      {FINANCE_TABS.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href;
-        return (
-          <Link key={href} href={href}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-              active ? "bg-white/10 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Icon size={14} />
-            {label}
-          </Link>
-        );
-      })}
+    <div className="overflow-x-auto -mx-1 px-1 mb-6 scrollbar-none">
+      <div className="flex items-center gap-1 bg-white/3 border border-white/8 rounded-2xl p-1.5 w-fit min-w-max">
+        {FINANCE_TABS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href;
+          return (
+            <Link key={href} href={href}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                active ? "bg-white/10 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <Icon size={14} />
+              {label}
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -126,7 +128,7 @@ function Sparkline({ data, positive, w = 100, h = 40 }: { data: number[]; positi
   const lx = w - pad;
   const ly = pad + ((max - last) / range) * (h - pad * 2);
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: h, maxWidth: w }}>
       <defs>
         <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.25" />
@@ -155,9 +157,8 @@ function Sparkline({ data, positive, w = 100, h = 40 }: { data: number[]; positi
 }
 
 // ── Mini OHLC bar chart ────────────────────────────────────────────────────────
-function MiniOHLC({ data, w = 100, h = 48 }: { data: HistoricalPoint[]; w?: number; h?: number }) {
+function MiniOHLC({ data, w = 300, h = 80 }: { data: HistoricalPoint[]; w?: number; h?: number }) {
   if (!data || data.length < 2) return null;
-  const closes = data.map(d => d.close);
   const allPrices = data.flatMap(d => [d.open ?? d.close, d.high ?? d.close, d.low ?? d.close, d.close]);
   const min = Math.min(...allPrices);
   const max = Math.max(...allPrices);
@@ -166,7 +167,7 @@ function MiniOHLC({ data, w = 100, h = 48 }: { data: HistoricalPoint[]; w?: numb
   const gap   = w / data.length;
   const toY = (v: number) => 2 + ((max - v) / range) * (h - 4);
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: h }}>
       {data.map((d, i) => {
         const x   = i * gap + gap / 2;
         const isUp = d.close >= (d.open ?? d.close);
@@ -302,7 +303,7 @@ export default function BolsaPage() {
   const allLoading = tickers.some(t => states[t]?.loading);
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
+    <div className="p-4 md:p-6 lg:p-8 max-w-5xl 2xl:max-w-6xl mx-auto">
       <FinanceNav />
 
       {/* Header */}
@@ -330,26 +331,26 @@ export default function BolsaPage() {
 
       {/* Summary dashboard */}
       {loadedQuotes.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="rounded-2xl p-4 bg-white/3 border border-white/8">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Ativos monitorados</p>
-            <p className="text-3xl font-bold text-white">{loadedQuotes.length}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">{tickers.length - loadedQuotes.length} carregando</p>
+        <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-3 mb-6">
+          <div className="rounded-2xl p-3 sm:p-4 bg-white/3 border border-white/8">
+            <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-wider mb-1 sm:mb-2">Ativos</p>
+            <p className="text-2xl sm:text-3xl font-bold text-white">{loadedQuotes.length}</p>
+            <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-0.5 sm:mt-1 hidden sm:block">{tickers.length - loadedQuotes.length} carregando</p>
           </div>
           {best && (
-            <div className="rounded-2xl p-4 bg-emerald-500/8 border border-emerald-500/20">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Maior alta</p>
-              <p className="text-lg font-bold text-emerald-400">+{fmt2(best.regularMarketChangePercent ?? 0)}%</p>
-              <p className="text-xs text-white font-medium mt-1">{best.symbol}</p>
-              <p className="text-[10px] text-muted-foreground truncate">{best.shortName}</p>
+            <div className="rounded-2xl p-3 sm:p-4 bg-emerald-500/8 border border-emerald-500/20">
+              <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-wider mb-1 sm:mb-2">Maior alta</p>
+              <p className="text-sm sm:text-lg font-bold text-emerald-400">+{fmt2(best.regularMarketChangePercent ?? 0)}%</p>
+              <p className="text-[10px] sm:text-xs text-white font-medium mt-0.5 sm:mt-1">{best.symbol}</p>
+              <p className="text-[9px] sm:text-[10px] text-muted-foreground truncate hidden sm:block">{best.shortName}</p>
             </div>
           )}
           {worst && (
-            <div className="rounded-2xl p-4 bg-red-500/8 border border-red-500/20">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Maior queda</p>
-              <p className="text-lg font-bold text-red-400">{fmt2(worst.regularMarketChangePercent ?? 0)}%</p>
-              <p className="text-xs text-white font-medium mt-1">{worst.symbol}</p>
-              <p className="text-[10px] text-muted-foreground truncate">{worst.shortName}</p>
+            <div className="rounded-2xl p-3 sm:p-4 bg-red-500/8 border border-red-500/20">
+              <p className="text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-wider mb-1 sm:mb-2">Maior queda</p>
+              <p className="text-sm sm:text-lg font-bold text-red-400">{fmt2(worst.regularMarketChangePercent ?? 0)}%</p>
+              <p className="text-[10px] sm:text-xs text-white font-medium mt-0.5 sm:mt-1">{worst.symbol}</p>
+              <p className="text-[9px] sm:text-[10px] text-muted-foreground truncate hidden sm:block">{worst.shortName}</p>
             </div>
           )}
         </div>
@@ -560,7 +561,7 @@ export default function BolsaPage() {
                             </p>
                           )}
                         </div>
-                        <MiniOHLC data={q.historicalDataPrice!} w={560} h={80} />
+                        <MiniOHLC data={q.historicalDataPrice!} h={80} />
                         {/* X axis dates */}
                         <div className="flex justify-between mt-1">
                           {q.historicalDataPrice!.map((p, i) => (

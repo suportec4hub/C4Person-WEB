@@ -34,24 +34,26 @@ const FINANCE_TABS = [
 function FinanceNav() {
   const pathname = usePathname();
   return (
-    <div className="flex items-center gap-1 mb-6 bg-white/3 border border-white/8 rounded-2xl p-1.5 w-fit">
-      {FINANCE_TABS.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href;
-        return (
-          <Link
-            key={href}
-            href={href}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-              active
-                ? "bg-white/10 text-white shadow-sm"
-                : "text-muted-foreground hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Icon size={14} />
-            {label}
-          </Link>
-        );
-      })}
+    <div className="overflow-x-auto -mx-1 px-1 mb-6 scrollbar-none">
+      <div className="flex items-center gap-1 bg-white/3 border border-white/8 rounded-2xl p-1.5 w-fit min-w-max">
+        {FINANCE_TABS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href;
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                active
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-muted-foreground hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <Icon size={14} />
+              {label}
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }

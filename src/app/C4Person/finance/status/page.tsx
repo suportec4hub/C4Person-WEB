@@ -21,20 +21,22 @@ const FINANCE_TABS = [
 function FinanceNav() {
   const pathname = usePathname();
   return (
-    <div className="flex items-center gap-1 mb-6 bg-white/3 border border-white/8 rounded-2xl p-1.5 w-fit">
-      {FINANCE_TABS.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href;
-        return (
-          <Link key={href} href={href}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-              active ? "bg-white/10 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
-            }`}
-          >
-            <Icon size={14} />
-            {label}
-          </Link>
-        );
-      })}
+    <div className="overflow-x-auto -mx-1 px-1 mb-6 scrollbar-none">
+      <div className="flex items-center gap-1 bg-white/3 border border-white/8 rounded-2xl p-1.5 w-fit min-w-max">
+        {FINANCE_TABS.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href;
+          return (
+            <Link key={href} href={href}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                active ? "bg-white/10 text-white shadow-sm" : "text-muted-foreground hover:text-white hover:bg-white/5"
+              }`}
+            >
+              <Icon size={14} />
+              {label}
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -204,7 +206,7 @@ export default function PluggyStatusPage() {
   const overallLabel = summary?.labels?.pt ?? (overallKey === "op" ? "Todos os sistemas operacionais" : "Degradação em algumas instituições");
 
   return (
-    <div className="p-4 md:p-6 max-w-4xl mx-auto">
+    <div className="p-4 md:p-6 lg:p-8 max-w-5xl 2xl:max-w-6xl mx-auto">
       <FinanceNav />
 
       {/* Page header */}
@@ -261,7 +263,7 @@ export default function PluggyStatusPage() {
           </div>
 
           {/* Count boxes */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-6">
             {[
               {
                 label: "Operacionais",
@@ -279,11 +281,11 @@ export default function PluggyStatusPage() {
                 color: "#3b82f6", icon: Clock,
               },
             ].map(({ label, value, color, icon: Icon }) => (
-              <div key={label} className="rounded-2xl p-4 border flex flex-col items-center gap-2"
+              <div key={label} className="rounded-2xl p-3 sm:p-4 border flex flex-col items-center gap-1.5 sm:gap-2"
                 style={{ background: `${color}08`, borderColor: `${color}20` }}>
-                <Icon size={18} style={{ color }} />
-                <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-                <p className="text-[11px] text-muted-foreground text-center">{label}</p>
+                <Icon size={16} style={{ color }} className="hidden sm:block" />
+                <p className="text-xl sm:text-2xl font-bold" style={{ color }}>{value}</p>
+                <p className="text-[9px] sm:text-[11px] text-muted-foreground text-center leading-tight">{label}</p>
               </div>
             ))}
           </div>
