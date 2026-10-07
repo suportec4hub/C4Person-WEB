@@ -589,7 +589,15 @@ export default function Dashboard() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      // Force 32 kbps Opus — excellent quality for voice, keeps 5-min segments ~1.2 MB
+      // (well under Vercel's 4.5 MB function payload limit)
+      const recorderOpts: MediaRecorderOptions = { audioBitsPerSecond: 32_000 };
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        recorderOpts.mimeType = "audio/webm;codecs=opus";
+      } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+        recorderOpts.mimeType = "audio/webm";
+      }
+      const mediaRecorder = new MediaRecorder(stream, recorderOpts);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       rawDataChunksRef.current = [];
@@ -733,6 +741,9 @@ export default function Dashboard() {
 
         const sizeMB = (segments[i].size / 1024 / 1024).toFixed(1);
         console.log(`[process-audio] segmento ${i + 1}/${segments.length} — ${sizeMB} MB`);
+        if (segments[i].size > 4 * 1024 * 1024) {
+          throw new Error(`Segmento ${i + 1} muito grande (${sizeMB} MB). Limite: 4 MB. Certifique-se de usar o microfone do dispositivo (não virtual).`);
+        }
 
         // Para gravações muito curtas (1 segmento), usa modo full direto
         if (segments.length === 1) {
