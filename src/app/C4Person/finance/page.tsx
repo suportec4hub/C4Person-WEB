@@ -1058,6 +1058,14 @@ export default function FinancePage() {
     }
   }, [pluggyClientId, pluggyClientSecret, userId, undoToast]);
 
+  const clearOrphanedPluggyItems = useCallback(async () => {
+    await supabase.from("pluggy_items").delete().eq("user_id", userId);
+    await supabase.from("bank_accounts").delete().eq("user_id", userId);
+    setPluggyItems([]);
+    setBankAccounts([]);
+    undoToast("Conexões antigas removidas.", () => {});
+  }, [userId, undoToast]);
+
   const disconnectPluggy = useCallback(async () => {
     if (!confirm("Remover credenciais e limpar todos os dados bancários importados do Pluggy?")) return;
     setPluggyDisconnecting(true);
@@ -2079,10 +2087,25 @@ export default function FinancePage() {
               </p>
             </div>
 
-            {/* Expired connections — show reconnect buttons per item */}
+            {/* Expired connections — show reconnect or clear buttons */}
             {pluggyItems.length > 0 && bankAccounts.length === 0 && (
               <div className="w-full space-y-2">
-                {pluggyItems.map(item => (
+                {/* No credentials → show single clear button instead of broken reconnect buttons */}
+                {!profile.pluggy_client_id ? (
+                  <div className="flex flex-col items-center gap-3 px-4 py-4 rounded-xl bg-red-500/8 border border-red-500/20">
+                    <p className="text-sm text-muted-foreground text-center">
+                      Há {pluggyItems.length} conexão{pluggyItems.length !== 1 ? "ões" : ""} antiga{pluggyItems.length !== 1 ? "s" : ""} sem credenciais. Limpe para começar do zero.
+                    </p>
+                    <button
+                      onClick={clearOrphanedPluggyItems}
+                      className="flex items-center gap-2 text-xs px-4 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/20 font-medium transition-colors"
+                    >
+                      <Trash2 size={13} />
+                      Limpar conexões antigas
+                    </button>
+                  </div>
+                ) : (
+                  pluggyItems.map(item => (
                   <div key={item.item_id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
                     {item.institution_logo_url ? (
                       <div className="w-8 h-8 rounded-lg bg-white p-1 shrink-0">
@@ -2107,7 +2130,8 @@ export default function FinancePage() {
                       Reconectar
                     </button>
                   </div>
-                ))}
+                ))
+                )}
                 <p className="text-[10px] text-muted-foreground text-center pt-1">
                   Ou use "Adicionar banco" acima para conectar uma nova conta
                 </p>
