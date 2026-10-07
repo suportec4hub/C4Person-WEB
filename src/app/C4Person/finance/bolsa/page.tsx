@@ -191,6 +191,77 @@ function MiniOHLC({ data, w = 300, h = 80 }: { data: HistoricalPoint[]; w?: numb
   );
 }
 
+// ── Market hours (B3) ────────────────────────────────────────────────────────
+const OPEN_H = 10, OPEN_M = 0;   // 10:00 BRT
+const CLOSE_H = 17, CLOSE_M = 55; // 17:55 BRT
+
+type MarketState = "pre" | "open" | "after" | "closed";
+
+function getMarketState(): { state: MarketState; label: string; color: string; minutesLeft?: number } {
+  const brt = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const day = brt.getDay();
+  const t = brt.getHours() * 60 + brt.getMinutes();
+  const preOpenMin = 9 * 60 + 45;
+  const openMin    = OPEN_H * 60 + OPEN_M;
+  const closeMin   = CLOSE_H * 60 + CLOSE_M;
+  const afterMin   = 18 * 60 + 25;
+
+  if (day === 0 || day === 6) return { state: "closed", label: "Fechado", color: "#ef4444" };
+  if (t < preOpenMin)  return { state: "closed", label: "Fechado", color: "#ef4444", minutesLeft: preOpenMin - t };
+  if (t < openMin)     return { state: "pre",    label: "Pré-abertura", color: "#f59e0b", minutesLeft: openMin - t };
+  if (t < closeMin)    return { state: "open",   label: "Aberto", color: "#10b981", minutesLeft: closeMin - t };
+  if (t < afterMin)    return { state: "after",  label: "After Market", color: "#3b82f6", minutesLeft: afterMin - t };
+  return { state: "closed", label: "Fechado", color: "#ef4444" };
+}
+
+function fmtCountdown(minutes: number) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m.toString().padStart(2, "0")}min` : `${m}min`;
+}
+
+function MarketStatus() {
+  const [info, setInfo] = useState(getMarketState);
+  useEffect(() => {
+    const id = setInterval(() => setInfo(getMarketState()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/3 border border-white/8 mb-5">
+      {/* Pulsing dot */}
+      <div className="relative shrink-0">
+        <div className="w-2.5 h-2.5 rounded-full" style={{ background: info.color }} />
+        {info.state === "open" && (
+          <div className="absolute inset-0 rounded-full animate-ping opacity-60" style={{ background: info.color }} />
+        )}
+      </div>
+      {/* Status label */}
+      <span className="text-xs font-bold" style={{ color: info.color }}>{info.label}</span>
+      {/* Separator */}
+      <span className="text-white/15 text-xs">|</span>
+      {/* Session times */}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="font-medium text-white/70">Pregão B3</span>
+        <span>10:00 → 17:55</span>
+      </div>
+      {/* Countdown */}
+      {info.minutesLeft != null && (
+        <>
+          <span className="text-white/15 text-xs hidden sm:block">|</span>
+          <span className="text-[11px] text-muted-foreground hidden sm:block">
+            {info.state === "open" || info.state === "after"
+              ? `Fecha em ${fmtCountdown(info.minutesLeft)}`
+              : info.state === "pre"
+              ? `Abre em ${fmtCountdown(info.minutesLeft)}`
+              : `Reabre em ${fmtCountdown(info.minutesLeft)}`}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function BolsaPage() {
   const [tickers, setTickers] = useState<string[]>(() => {
@@ -319,6 +390,9 @@ export default function BolsaPage() {
           Atualizar
         </button>
       </div>
+
+      {/* Market status */}
+      <MarketStatus />
 
       {/* Free plan notice */}
       <div className="mb-5 p-3.5 rounded-2xl bg-amber-500/8 border border-amber-500/20 flex items-start gap-3">
