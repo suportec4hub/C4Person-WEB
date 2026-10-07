@@ -206,7 +206,8 @@ export default function PluggyStatusPage() {
   const overallLabel = summary?.labels?.pt ?? (overallKey === "op" ? "Todos os sistemas operacionais" : "Degradação em algumas instituições");
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-5xl 2xl:max-w-6xl mx-auto">
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-24 relative">
+      <div className="max-w-5xl 2xl:max-w-6xl mx-auto">
       <FinanceNav />
 
       {/* Page header */}
@@ -477,6 +478,7 @@ export default function PluggyStatusPage() {
           )}
         </>
       )}
+      </div>{/* end max-w inner */}
     </div>
   );
 }

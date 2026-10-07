@@ -708,7 +708,8 @@ export default function BolsaPage() {
   }, [loadedQuotes]);
 
   return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-6xl 2xl:max-w-7xl mx-auto">
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pb-24 relative">
+      <div className="max-w-6xl 2xl:max-w-7xl mx-auto">
       <FinanceNav />
 
       {/* Two-column layout: main content | live player sidebar */}
@@ -1129,6 +1130,7 @@ export default function BolsaPage() {
       </div>
 
       </div>{/* end two-column flex */}
+      </div>{/* end max-w inner */}
     </div>
   );
 }
