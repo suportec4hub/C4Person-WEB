@@ -15,20 +15,52 @@ const supabaseAdmin = (() => {
 async function fullSyncForItem(itemId: string) {
   if (!supabaseAdmin) return;
 
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("id, pluggy_client_id, pluggy_client_secret")
-    .eq("pluggy_item_id", itemId)
+  // Look up by pluggy_items table first (supports multiple banks per user),
+  // fall back to profiles.pluggy_item_id for backward compatibility
+  let userId: string | null = null;
+  const { data: itemRow } = await supabaseAdmin
+    .from("pluggy_items")
+    .select("user_id")
+    .eq("item_id", itemId)
     .single();
 
-  if (!profile) return;
+  if (itemRow) {
+    userId = itemRow.user_id;
+  } else {
+    const { data: profileRow } = await supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("pluggy_item_id", itemId)
+      .single();
+    userId = profileRow?.id ?? null;
+  }
 
-  const clientId     = profile.pluggy_client_id     ?? process.env.PLUGGY_CLIENT_ID;
-  const clientSecret = profile.pluggy_client_secret  ?? process.env.PLUGGY_CLIENT_SECRET;
+  if (!userId) return;
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("pluggy_client_id, pluggy_client_secret")
+    .eq("id", userId)
+    .single();
+
+  const clientId     = profile?.pluggy_client_id     ?? process.env.PLUGGY_CLIENT_ID;
+  const clientSecret = profile?.pluggy_client_secret  ?? process.env.PLUGGY_CLIENT_SECRET;
   if (!clientId || !clientSecret) return;
 
   const { PluggyClient } = await import("pluggy-sdk");
   const pluggy = new PluggyClient({ clientId, clientSecret });
+
+  // Fetch item for institution name + logo
+  const item = await pluggy.fetchItem(itemId);
+  const institutionName    = item.connector?.name     ?? null;
+  const institutionLogoUrl = (item.connector as any)?.imageUrl ?? null;
+
+  // Keep pluggy_items up to date
+  await supabaseAdmin.from("pluggy_items").upsert(
+    { user_id: userId, item_id: itemId, institution_name: institutionName, institution_logo_url: institutionLogoUrl },
+    { onConflict: "user_id,item_id" }
+  );
+
   const { results: accounts } = await pluggy.fetchAccounts(itemId);
 
   const from = new Date();
@@ -39,15 +71,16 @@ async function fullSyncForItem(itemId: string) {
     // ── Sync account balance ────────────────────────────────────────────────
     await supabaseAdmin.from("bank_accounts").upsert(
       {
-        user_id:          profile.id,
-        pluggy_account_id: acc.id,
-        name:              acc.name ?? "Conta",
-        type:              acc.type,
-        balance:           Number(acc.balance ?? 0),
-        institution_name:  (acc as any).institution?.name ?? null,
-        credit_limit:      acc.creditData?.creditLimit     != null ? Number(acc.creditData.creditLimit)            : null,
-        available_credit:  acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit) : null,
-        last_synced_at:    new Date().toISOString(),
+        user_id:               userId,
+        pluggy_account_id:     acc.id,
+        name:                  acc.name ?? "Conta",
+        type:                  acc.type,
+        balance:               Number(acc.balance ?? 0),
+        institution_name:      institutionName,
+        institution_logo_url:  institutionLogoUrl,
+        credit_limit:          acc.creditData?.creditLimit          != null ? Number(acc.creditData.creditLimit)            : null,
+        available_credit:      acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit)   : null,
+        last_synced_at:        new Date().toISOString(),
       },
       { onConflict: "user_id,pluggy_account_id" }
     );
@@ -65,7 +98,7 @@ async function fullSyncForItem(itemId: string) {
         const paid  = Math.max(0, total - used);
         await supabaseAdmin.from("debts").upsert(
           {
-            user_id:           profile.id,
+            user_id:           userId,
             pluggy_account_id: acc.id,
             name:              acc.name ?? "Conta importada",
             creditor:          null,
@@ -87,7 +120,7 @@ async function fullSyncForItem(itemId: string) {
           const txType = (tx as any).type === "CREDIT" ? "in" : "out";
           await supabaseAdmin.from("transactions").upsert(
             {
-              user_id:               profile.id,
+              user_id:               userId,
               pluggy_transaction_id: (tx as any).id,
               name:                  (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
               amount:                Math.abs(Number((tx as any).amount ?? 0)),
@@ -111,7 +144,7 @@ async function fullSyncForItem(itemId: string) {
   // Update last sync timestamp
   await supabaseAdmin.from("profiles")
     .update({ last_pluggy_sync_at: new Date().toISOString() })
-    .eq("id", profile.id);
+    .eq("id", userId);
 }
 
 export async function POST(req: Request) {

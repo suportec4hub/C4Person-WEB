@@ -1254,14 +1254,22 @@ export default function Dashboard() {
                 <>
                   <h4 className="text-2xl font-bold tracking-tight text-white">{formatCurrency(assetBankBalance)}</h4>
                   <p className="text-xs text-muted-foreground mt-1 mb-3">{connectedBanks} banco{connectedBanks !== 1 ? 's' : ''} · {bankAccounts.length} conta{bankAccounts.length !== 1 ? 's' : ''}</p>
-                  <div className="space-y-1.5 flex-1">
+                  <div className="space-y-2 flex-1">
                     {Array.from(new Set(bankAccounts.map(b => b.institution_name ?? b.name))).slice(0, 3).map(name => {
                       const accs = bankAccounts.filter(b => (b.institution_name ?? b.name) === name);
                       const bal = accs.filter(a => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type)).reduce((s, a) => s + Number(a.balance ?? 0), 0);
+                      const logo = accs.find(a => (a as any).institution_logo_url)?.institution_logo_url as string | undefined;
                       return (
                         <div key={name} className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1.5 text-white/70 truncate max-w-[60%]">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                          <span className="flex items-center gap-2 text-white/70 truncate max-w-[60%]">
+                            {logo ? (
+                              <span className="w-5 h-5 rounded-md bg-white/10 flex items-center justify-center shrink-0 overflow-hidden">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={logo} alt={name} className="w-4 h-4 object-contain" />
+                              </span>
+                            ) : (
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                            )}
                             {name}
                           </span>
                           <span className="text-emerald-400 font-medium">{formatCurrency(bal)}</span>

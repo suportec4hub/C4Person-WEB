@@ -52,6 +52,18 @@ export async function POST(req: Request) {
   try {
     const { PluggyClient } = await import("pluggy-sdk");
     const pluggy = new PluggyClient({ clientId, clientSecret });
+
+    // Fetch item to get institution name + logo from connector
+    const item = await pluggy.fetchItem(itemId);
+    const institutionName    = item.connector?.name     ?? null;
+    const institutionLogoUrl = (item.connector as any)?.imageUrl ?? null;
+
+    // Persist this itemId so multi-bank users don't lose earlier connections
+    await supabaseAdmin.from("pluggy_items").upsert(
+      { user_id: user.id, item_id: itemId, institution_name: institutionName, institution_logo_url: institutionLogoUrl },
+      { onConflict: "user_id,item_id" }
+    );
+
     const { results: accounts } = await pluggy.fetchAccounts(itemId);
 
     // 3-month window for transaction history
@@ -59,25 +71,28 @@ export async function POST(req: Request) {
     from.setMonth(from.getMonth() - 3);
     const fromStr = from.toISOString().split("T")[0];
 
-    let importedDebts = 0;
-    let importedTx    = 0;
+    let importedDebts    = 0;
+    let importedTx       = 0;
+    let importedAccounts = 0;
 
     for (const acc of accounts) {
       // ── Bank account balance + credit data ───────────────────────────────
-      await supabaseAdmin.from("bank_accounts").upsert(
+      const { error: baErr } = await supabaseAdmin.from("bank_accounts").upsert(
         {
-          user_id:           user.id,
-          pluggy_account_id: acc.id,
-          name:              acc.name ?? "Conta",
-          type:              acc.type,
-          balance:           Number(acc.balance ?? 0),
-          institution_name:  (acc as any).institution?.name ?? null,
-          credit_limit:      acc.creditData?.creditLimit          != null ? Number(acc.creditData.creditLimit)            : null,
-          available_credit:  acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit)   : null,
-          last_synced_at:    new Date().toISOString(),
+          user_id:               user.id,
+          pluggy_account_id:     acc.id,
+          name:                  acc.name ?? "Conta",
+          type:                  acc.type,
+          balance:               Number(acc.balance ?? 0),
+          institution_name:      institutionName,
+          institution_logo_url:  institutionLogoUrl,
+          credit_limit:          acc.creditData?.creditLimit          != null ? Number(acc.creditData.creditLimit)            : null,
+          available_credit:      acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit)   : null,
+          last_synced_at:        new Date().toISOString(),
         },
         { onConflict: "user_id,pluggy_account_id" }
       );
+      if (!baErr) importedAccounts++;
 
       // ── Debts (credit cards, loans) ──────────────────────────────────────
       if (DEBT_TYPES.has(acc.type)) {
@@ -137,7 +152,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ importedDebts, importedTx, accounts: accounts.length });
+    return NextResponse.json({ importedDebts, importedTx, importedAccounts, accounts: accounts.length });
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? "Erro interno" }, { status: 500 });
   }

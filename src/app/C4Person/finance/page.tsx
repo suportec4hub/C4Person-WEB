@@ -60,6 +60,7 @@ interface BankAccount {
   type: string;
   balance: number;
   institution_name: string | null;
+  institution_logo_url: string | null;
   last_synced_at: string | null;
   credit_limit?: number | null;
   available_credit?: number | null;
@@ -150,14 +151,16 @@ export default function FinancePage() {
   const [debtAiLoading, setDebtAiLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [txRes, budRes, debtRes] = await Promise.all([
+    const [txRes, budRes, debtRes, baRes] = await Promise.all([
       supabase.from("transactions").select("*").order("transaction_date", { ascending: false }),
       supabase.from("budgets").select("*").order("created_at", { ascending: true }),
       supabase.from("debts").select("*").order("created_at", { ascending: true }),
+      supabase.from("bank_accounts").select("*").order("institution_name", { ascending: true }),
     ]);
     if (txRes.data)   setTransactions(txRes.data as Transaction[]);
     if (budRes.data)  setBudgets(budRes.data as Budget[]);
     if (debtRes.data) setDebts(debtRes.data as Debt[]);
+    if (baRes.data)   setBankAccounts(baRes.data as BankAccount[]);
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
@@ -316,7 +319,8 @@ export default function FinancePage() {
         if (!a.last_synced_at) return latest;
         return !latest || a.last_synced_at > latest ? a.last_synced_at : latest;
       }, null as string | null);
-      return { name, accounts, assetBalance, lastSync };
+      const logoUrl = accounts.find(a => a.institution_logo_url)?.institution_logo_url ?? null;
+      return { name, accounts, assetBalance, lastSync, logoUrl };
     });
   }, [bankAccounts]);
 
@@ -959,9 +963,10 @@ export default function FinancePage() {
       } else {
         setProfile(p => ({ ...p, pluggy_item_id: itemId }));
         const parts = [];
-        if (d.importedTx)    parts.push(`${d.importedTx} transaç${d.importedTx === 1 ? "ão" : "ões"}`);
-        if (d.importedDebts) parts.push(`${d.importedDebts} dívida${d.importedDebts === 1 ? "" : "s"}`);
-        undoToast(parts.length ? `Importado: ${parts.join(" e ")}!` : "Banco conectado! Nenhum dado novo.", () => {});
+        if (d.importedAccounts) parts.push(`${d.importedAccounts} conta${d.importedAccounts === 1 ? "" : "s"}`);
+        if (d.importedTx)       parts.push(`${d.importedTx} transaç${d.importedTx === 1 ? "ão" : "ões"}`);
+        if (d.importedDebts)    parts.push(`${d.importedDebts} dívida${d.importedDebts === 1 ? "" : "s"}`);
+        undoToast(parts.length ? `Banco conectado! ${parts.join(", ")} importadas.` : "Banco conectado! Nenhum dado novo.", () => {});
         fetchData();
       }
     } catch {
@@ -1512,13 +1517,20 @@ export default function FinancePage() {
                       onClick={() => setExpandedBank(isOpen ? null : bank.name)}
                       className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors text-left"
                     >
-                      {/* Avatar */}
-                      <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-lg"
-                        style={{ backgroundColor: `${color}30`, border: `1px solid ${color}40`, color }}
-                      >
-                        {initials}
-                      </div>
+                      {/* Logo or initials avatar */}
+                      {bank.logoUrl ? (
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-white/10 border border-white/10 overflow-hidden">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={bank.logoUrl} alt={bank.name} className="w-8 h-8 object-contain" />
+                        </div>
+                      ) : (
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-lg"
+                          style={{ backgroundColor: `${color}30`, border: `1px solid ${color}40`, color }}
+                        >
+                          {initials}
+                        </div>
+                      )}
 
                       {/* Name + status */}
                       <div className="flex-1 min-w-0">
