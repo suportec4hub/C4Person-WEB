@@ -60,6 +60,20 @@ async function putBankAccount(userId: string, pluggyAccountId: string, payload: 
   return { error };
 }
 
+async function putTransaction(payload: Record<string, unknown>) {
+  const { data: existing } = await supabaseAdmin
+    .from("transactions")
+    .select("id")
+    .eq("user_id", payload.user_id as string)
+    .eq("pluggy_transaction_id", payload.pluggy_transaction_id as string)
+    .maybeSingle();
+
+  if (existing) {
+    return supabaseAdmin.from("transactions").update(payload).eq("id", existing.id);
+  }
+  return supabaseAdmin.from("transactions").insert(payload);
+}
+
 export async function POST(req: Request) {
   const { itemId } = await req.json();
   if (!itemId) return NextResponse.json({ error: "itemId obrigatório" }, { status: 400 });
@@ -198,14 +212,17 @@ export async function POST(req: Request) {
         }
       }
 
-      // ── Transactions — try ALL account types, catch silently if unsupported ──
+      // ── Transactions — paginate through all pages ──────────────────────────
       try {
-        const { results: txList } = await pluggy.fetchTransactions(acc.id, { from: fromStr } as any);
-        for (const tx of txList ?? []) {
-          // Pluggy v2: transaction.type "CREDIT" = money coming in, "DEBIT" = going out
-          const txType = (tx as any).type === "CREDIT" ? "in" : "out";
-          const { error } = await supabaseAdmin.from("transactions").upsert(
-            {
+        let page = 1;
+        let totalPages = 1;
+        do {
+          const txPage = await pluggy.fetchTransactions(acc.id, { from: fromStr, page, pageSize: 500 } as any);
+          totalPages = (txPage as any).totalPages ?? 1;
+          for (const tx of (txPage.results ?? [])) {
+            // Pluggy v2: transaction.type "CREDIT" = money coming in, "DEBIT" = going out
+            const txType = (tx as any).type === "CREDIT" ? "in" : "out";
+            const { error } = await putTransaction({
               user_id:                user.id,
               pluggy_transaction_id:  (tx as any).id,
               name:                   (tx as any).description ?? (tx as any).descriptionRaw ?? "Transação importada",
@@ -217,11 +234,11 @@ export async function POST(req: Request) {
                 : now.toISOString().split("T")[0],
               source:                 "pluggy",
               payment_source:         [acc.name ?? institutionName ?? "Banco"],
-            },
-            { onConflict: "user_id,pluggy_transaction_id" }
-          );
-          if (!error) importedTx++;
-        }
+            });
+            if (!error) importedTx++;
+          }
+          page++;
+        } while (page <= totalPages);
       } catch {
         // This account type doesn't support transaction listing — skip silently
       }
