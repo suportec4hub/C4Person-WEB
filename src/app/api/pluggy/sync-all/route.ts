@@ -8,13 +8,39 @@ import { cookies } from "next/headers";
 // We accept both so the route works regardless of SDK version.
 const DEBT_TYPES = new Set(["CREDIT", "CREDIT_CARD", "LOAN", "FINANCING"]);
 
-// If the account name starts with a bank-sounding keyword, treat it as the institution name.
-// This handles Pluggy's test connector "MeuPluggy" which gives accounts named "BANCO INTER",
-// "Banco Bradesco", etc. For real connectors the account name is a product name like
-// "Conta Corrente" and we fall back to the connector name (which IS the bank name).
-const BANK_PREFIX_RE = /^(banco|bco|bank|caixa|nubank|inter|bradesco|itau|ita(ú|u)|santander|sicoob|sicredi|c6\s|c6bank|picpay|bmg|safra|votorantim|original|pan\s|banpara|banrisul|next|neon|will|stone|mercado\s*pago)/i;
+// Maps any recognisable substring (in account name OR connector name) to a canonical institution name.
+// This lets the MeuPluggy test connector accounts (e.g. "PIC PAY MASTERCARD PLATINUM") and
+// real connector names (e.g. "Picpay Instituição De Pagamento S.A") resolve to the same group.
+const INSTITUTION_MAP: Array<[RegExp, string]> = [
+  [/pic\s*pay/i,                "PicPay"],
+  [/banco\s+inter|^inter\b/i,   "Banco Inter"],
+  [/bradesco/i,                  "Banco Bradesco"],
+  [/ita[uú]/i,                   "Itaú"],
+  [/santander/i,                 "Santander"],
+  [/nubank/i,                    "Nubank"],
+  [/c6\s*bank/i,                 "C6 Bank"],
+  [/mercado\s*pago/i,            "Mercado Pago"],
+  [/sicoob/i,                    "Sicoob"],
+  [/sicredi/i,                   "Sicredi"],
+  [/caixa/i,                     "Caixa Econômica"],
+  [/original/i,                  "Banco Original"],
+  [/banrisul/i,                  "Banrisul"],
+  [/stone/i,                     "Stone"],
+  [/neon/i,                      "Neon"],
+  [/next/i,                      "Next"],
+  [/bmg/i,                       "Banco BMG"],
+  [/safra/i,                     "Banco Safra"],
+];
+
 function resolveInstitution(accountName: string, connectorName: string | null): string | null {
-  if (accountName && BANK_PREFIX_RE.test(accountName.trim())) return accountName;
+  for (const [re, canonical] of INSTITUTION_MAP) {
+    if (accountName && re.test(accountName)) return canonical;
+  }
+  if (connectorName) {
+    for (const [re, canonical] of INSTITUTION_MAP) {
+      if (re.test(connectorName)) return canonical;
+    }
+  }
   return connectorName;
 }
 
