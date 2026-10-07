@@ -239,6 +239,7 @@ export default function Dashboard() {
   const [showRecorder, setShowRecorder] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [recordingTitle, setRecordingTitle] = useState("");
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, phase: "" });
   const [result, setResult] = useState<{
     transcription: string;
@@ -654,7 +655,7 @@ export default function Dashboard() {
     }
   ) => {
     const noteId = crypto.randomUUID();
-    const title = `Reunião ${format(new Date(), "dd/MM 'às' HH:mm")}`;
+    const title = recordingTitle.trim() || `Reunião ${format(new Date(), "dd/MM 'às' HH:mm")}`;
 
     const { error: noteErr } = await supabase.from("notes").insert([{
       id: noteId,
@@ -665,6 +666,7 @@ export default function Dashboard() {
       tags: noteData.tags ?? [],
       meeting_type: noteData.meetingType ?? "Outro",
       duration_seconds: recordingTime,
+      attendees: noteData.attendees ?? [],
       user_id: uid,
     }]);
 
@@ -674,6 +676,7 @@ export default function Dashboard() {
     }
 
     // Upload do áudio completo para Supabase Storage (best-effort)
+    // Store the storage path (not public URL) so signed URLs can be generated for private buckets
     let audioUrl: string | undefined;
     const fullAudio = buildFullAudio();
     if (fullAudio && fullAudio.size > 0) {
@@ -683,11 +686,8 @@ export default function Dashboard() {
         .upload(path, fullAudio, { contentType: "audio/webm", upsert: true });
 
       if (!uploadErr) {
-        const { data: { publicUrl } } = supabase.storage
-          .from("meeting-recordings")
-          .getPublicUrl(path);
-        audioUrl = publicUrl;
-        await supabase.from("notes").update({ audio_url: audioUrl }).eq("id", noteId);
+        audioUrl = path;
+        await supabase.from("notes").update({ audio_url: path }).eq("id", noteId);
       } else {
         console.warn("[audio upload] falhou (bucket não criado?):", uploadErr.message);
       }
@@ -759,11 +759,11 @@ export default function Dashboard() {
 
   const handleImportTasks = async () => {
     if (selectedActions.length === 0) return;
-    const newTasks = selectedActions.map(title => ({
-      title,
+    const newTasks = selectedActions.map(raw => ({
+      title: raw.replace(/\[URGENTE\]/g, "").trim(),
       time: "Livre",
       is_done: false,
-      priority: 'normal' as const,
+      priority: (raw.includes("[URGENTE]") ? "alta" : "normal") as "alta" | "normal",
       user_id: userId,
     }));
     const { data } = await supabase.from('tasks').insert(newTasks).select();
@@ -781,6 +781,7 @@ export default function Dashboard() {
       setRecordingTime(0);
       setSelectedActions([]);
       setImportSuccess(false);
+      setRecordingTitle("");
       setProcessingProgress({ current: 0, total: 0, phase: "" });
       audioChunksRef.current = [];
       initChunkRef.current = null;
@@ -1448,9 +1449,22 @@ export default function Dashboard() {
                 Assistente de Reunião (IA)
               </h2>
 
+              {/* Optional title input */}
+              {!result && !isProcessing && (
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    value={recordingTitle}
+                    onChange={e => setRecordingTitle(e.target.value)}
+                    placeholder="Nome da reunião (opcional)"
+                    className="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-2.5 text-white placeholder:text-muted-foreground text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                  />
+                </div>
+              )}
+
               {!result ? (
                 <div className="flex flex-col items-center justify-center py-10">
-                  
+
                   {isProcessing ? (
                     <div className="flex flex-col items-center gap-5 text-primary w-full max-w-sm">
                       <Loader2 size={44} className="animate-spin" />

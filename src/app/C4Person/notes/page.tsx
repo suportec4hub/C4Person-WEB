@@ -25,6 +25,7 @@ interface Note {
   meeting_type: string | null;
   duration_seconds: number | null;
   created_at: string;
+  attendees: string[] | null;
 }
 
 function AudioPlayer({ src }: { src: string }) {
@@ -97,12 +98,68 @@ function AudioPlayer({ src }: { src: string }) {
   );
 }
 
+function SignedAudioPlayer({ audioPath }: { audioPath: string }) {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  const [loadingUrl, setLoadingUrl] = useState(true);
+
+  useEffect(() => {
+    // Support both full URLs (legacy) and storage paths (new format)
+    const path = audioPath.includes("/meeting-recordings/")
+      ? (audioPath.split("/meeting-recordings/").pop() ?? audioPath)
+      : audioPath;
+    supabase.storage
+      .from("meeting-recordings")
+      .createSignedUrl(path, 3600)
+      .then(({ data }) => {
+        if (data?.signedUrl) setSignedUrl(data.signedUrl);
+        setLoadingUrl(false);
+      });
+  }, [audioPath]);
+
+  if (loadingUrl) return (
+    <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+      <div className="w-9 h-9 rounded-full bg-white/10 animate-pulse flex-shrink-0" />
+      <span className="text-sm text-muted-foreground">Carregando áudio…</span>
+    </div>
+  );
+  if (!signedUrl) return (
+    <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+      <Play size={16} className="text-muted-foreground flex-shrink-0" />
+      <span className="text-sm text-muted-foreground">Áudio indisponível</span>
+    </div>
+  );
+  return <AudioPlayer src={signedUrl} />;
+}
+
+const MEETING_TYPES = ["Todas", "Comercial", "Interna", "1:1", "Planejamento", "Retrospectiva", "Técnica", "Outro"] as const;
+
+const meetingTypeColor: Record<string, string> = {
+  "Comercial":     "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
+  "Interna":       "text-blue-400 bg-blue-400/10 border-blue-400/20",
+  "1:1":           "text-purple-400 bg-purple-400/10 border-purple-400/20",
+  "Planejamento":  "text-amber-400 bg-amber-400/10 border-amber-400/20",
+  "Retrospectiva": "text-rose-400 bg-rose-400/10 border-rose-400/20",
+  "Técnica":       "text-cyan-400 bg-cyan-400/10 border-cyan-400/20",
+  "Outro":         "text-muted-foreground bg-white/5 border-white/10",
+};
+
+const meetingTypeBorder: Record<string, string> = {
+  "Comercial":     "border-l-emerald-500/60",
+  "Interna":       "border-l-blue-500/60",
+  "1:1":           "border-l-purple-500/60",
+  "Planejamento":  "border-l-amber-500/60",
+  "Retrospectiva": "border-l-rose-500/60",
+  "Técnica":       "border-l-cyan-500/60",
+  "Outro":         "border-l-white/10",
+};
+
 export default function NotesPage() {
   const { undoToast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<Note[]>([]);
   const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState<string>("Todas");
   const [selected, setSelected] = useState<Note | null>(null);
   const [expandedTranscription, setExpandedTranscription] = useState(false);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
@@ -128,23 +185,47 @@ export default function NotesPage() {
   }, [fetchNotes]);
 
   const filtered = useMemo(() =>
-    notes.filter(n =>
-      n.title.toLowerCase().includes(search.toLowerCase()) ||
-      n.summary?.toLowerCase().includes(search.toLowerCase()) ||
-      n.transcription?.toLowerCase().includes(search.toLowerCase()) ||
-      n.tags?.some(t => t.toLowerCase().includes(search.toLowerCase()))
-    ), [notes, search]);
+    notes.filter(n => {
+      const matchesSearch =
+        n.title.toLowerCase().includes(search.toLowerCase()) ||
+        n.summary?.toLowerCase().includes(search.toLowerCase()) ||
+        n.transcription?.toLowerCase().includes(search.toLowerCase()) ||
+        n.tags?.some(t => t.toLowerCase().includes(search.toLowerCase())) ||
+        n.attendees?.some(a => a.toLowerCase().includes(search.toLowerCase()));
+      const matchesType = filterType === "Todas" || n.meeting_type === filterType;
+      return matchesSearch && matchesType;
+    }), [notes, search, filterType]);
 
-  const deleteNote = (id: string) => {
+  const stats = useMemo(() => {
+    const totalDuration = notes.reduce((sum, n) => sum + (n.duration_seconds ?? 0), 0);
+    const totalActions = notes.reduce((sum, n) => sum + (n.action_items?.length ?? 0), 0);
+    const h = Math.floor(totalDuration / 3600);
+    const m = Math.floor((totalDuration % 3600) / 60);
+    const durationStr = h > 0 ? `${h}h ${m}min` : m > 0 ? `${m}min` : "–";
+    return { totalDuration: durationStr, totalActions };
+  }, [notes]);
+
+  const typeCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const n of notes) {
+      const t = n.meeting_type ?? "Outro";
+      map[t] = (map[t] ?? 0) + 1;
+    }
+    return map;
+  }, [notes]);
+
+  const deleteNote = async (id: string) => {
     const item = notes.find(n => n.id === id);
     if (!item) return;
     setNotes(prev => prev.filter(n => n.id !== id));
     if (selected?.id === id) setSelected(null);
-    supabase.from("notes").delete().eq("id", id);
-    // Remove áudio do storage também (best-effort)
+    await supabase.from("notes").delete().eq("id", id);
     if (item.audio_url) {
-      const path = item.audio_url.split("/meeting-recordings/")[1];
-      if (path) supabase.storage.from("meeting-recordings").remove([path]);
+      // Support both full URLs (legacy) and storage paths (new)
+      const path = item.audio_url.startsWith("http")
+        ? (item.audio_url.split("/meeting-recordings/").pop() ?? "")
+        : item.audio_url;
+      if (path) await supabase.storage.from("meeting-recordings").remove([path]);
     }
     undoToast(`Nota "${item.title}" removida`, () => {
       setNotes(prev => [item, ...prev]);
@@ -198,16 +279,6 @@ export default function NotesPage() {
     return m > 0 ? `${m}min ${sec > 0 ? sec + "s" : ""}` : `${sec}s`;
   };
 
-  const meetingTypeColor: Record<string, string> = {
-    "Comercial":     "text-emerald-400 bg-emerald-400/10",
-    "Interna":       "text-blue-400 bg-blue-400/10",
-    "1:1":           "text-purple-400 bg-purple-400/10",
-    "Planejamento":  "text-amber-400 bg-amber-400/10",
-    "Retrospectiva": "text-rose-400 bg-rose-400/10",
-    "Técnica":       "text-cyan-400 bg-cyan-400/10",
-    "Outro":         "text-muted-foreground bg-white/5",
-  };
-
   if (!mounted) return null;
   if (loading) return (
     <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-8">
@@ -222,28 +293,68 @@ export default function NotesPage() {
       {/* Header */}
       <motion.header
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
-        className="mb-6 md:mb-10 flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end"
+        className="mb-6 md:mb-8"
       >
-        <div>
-          <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Anotar</h2>
-          <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Notas & Reuniões</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {notes.length} nota{notes.length !== 1 ? "s" : ""} gravada{notes.length !== 1 ? "s" : ""}
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end mb-5">
+          <div>
+            <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">Anotar</h2>
+            <h1 className="text-2xl md:text-4xl font-bold tracking-tight">Notas & Reuniões</h1>
+          </div>
+          <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 w-full sm:w-72">
+            <Search size={16} className="text-muted-foreground flex-shrink-0" />
+            <input
+              type="text" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar notas, tags, participantes…"
+              className="flex-1 bg-transparent text-sm text-white placeholder:text-muted-foreground outline-none"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-white transition-colors">
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-2.5 w-full sm:w-72">
-          <Search size={16} className="text-muted-foreground flex-shrink-0" />
-          <input
-            type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar em notas, tags e transcrições…"
-            className="flex-1 bg-transparent text-sm text-white placeholder:text-muted-foreground outline-none"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="text-muted-foreground hover:text-white transition-colors">
-              <X size={14} />
-            </button>
-          )}
-        </div>
+
+        {/* Stats bar */}
+        {notes.length > 0 && (
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {[
+              { label: "Notas", value: notes.length, icon: <Mic size={15} className="text-primary" /> },
+              { label: "Tempo gravado", value: stats.totalDuration, icon: <Clock size={15} className="text-amber-400" /> },
+              { label: "Ações geradas", value: stats.totalActions, icon: <CheckSquare size={15} className="text-emerald-400" /> },
+            ].map(s => (
+              <div key={s.label} className="bg-white/5 border border-white/8 rounded-2xl px-4 py-3 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+                  {s.icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-base font-bold text-white leading-none">{s.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Type filter chips */}
+        {notes.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            {MEETING_TYPES.filter(t => t === "Todas" || (typeCounts[t] ?? 0) > 0).map(type => (
+              <button
+                key={type}
+                onClick={() => setFilterType(type)}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-all font-medium ${
+                  filterType === type
+                    ? "bg-primary text-white border-primary"
+                    : "bg-white/5 text-muted-foreground border-white/10 hover:border-white/20 hover:text-white"
+                }`}
+              >
+                {type}
+                {type !== "Todas" && typeCounts[type] ? ` · ${typeCounts[type]}` : ""}
+              </button>
+            ))}
+          </div>
+        )}
       </motion.header>
 
       {/* Empty state */}
@@ -270,105 +381,121 @@ export default function NotesPage() {
       {/* Notes grid */}
       {filtered.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filtered.map((note, i) => (
-            <motion.div
-              key={note.id}
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              className="glass-card p-5 flex flex-col gap-3 group cursor-pointer hover:border-white/15 transition-all relative"
-              onClick={() => openNote(note)}
-            >
-              <button
-                onClick={e => { e.stopPropagation(); deleteNote(note.id); }}
-                className="absolute top-3 right-3 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 z-10"
+          {filtered.map((note, i) => {
+            const borderClass = meetingTypeBorder[note.meeting_type ?? "Outro"] ?? meetingTypeBorder["Outro"];
+            return (
+              <motion.div
+                key={note.id}
+                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className={`glass-card border-l-2 ${borderClass} p-5 flex flex-col gap-3 group cursor-pointer hover:border-white/15 transition-all relative`}
+                onClick={() => openNote(note)}
               >
-                <Trash2 size={15} />
-              </button>
+                <button
+                  onClick={e => { e.stopPropagation(); deleteNote(note.id); }}
+                  className="absolute top-3 right-3 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1 z-10"
+                >
+                  <Trash2 size={15} />
+                </button>
 
-              <div className="flex items-start gap-3 pr-6">
-                <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <Mic size={17} className="text-primary" />
+                <div className="flex items-start gap-3 pr-6">
+                  <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Mic size={17} className="text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    {editingTitleId === note.id ? (
+                      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                        <input
+                          autoFocus value={draftTitle} onChange={e => setDraftTitle(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") saveTitle(note.id); if (e.key === "Escape") setEditingTitleId(null); }}
+                          className="flex-1 bg-white/5 border border-white/20 rounded-lg px-2 py-1 text-white text-sm font-semibold focus:outline-none focus:border-primary/50 min-w-0"
+                        />
+                        <button onClick={() => saveTitle(note.id)} className="text-emerald-400 hover:text-emerald-300 p-0.5 flex-shrink-0"><Check size={14} /></button>
+                        <button onClick={() => setEditingTitleId(null)} className="text-muted-foreground hover:text-white p-0.5 flex-shrink-0"><X size={14} /></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-1 group/title">
+                        <h3 className="font-semibold text-white text-sm leading-snug line-clamp-2 flex-1">{note.title}</h3>
+                        <button onClick={e => startEditTitle(e, note)} className="opacity-0 group-hover/title:opacity-100 text-muted-foreground hover:text-white transition-all p-0.5 flex-shrink-0 mt-0.5">
+                          <Edit2 size={11} />
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {format(new Date(note.created_at), "d 'de' MMMM 'de' yyyy · HH:mm", { locale: ptBR })}
+                    </p>
+                  </div>
                 </div>
-                <div className="min-w-0 flex-1">
-                  {editingTitleId === note.id ? (
-                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                      <input
-                        autoFocus value={draftTitle} onChange={e => setDraftTitle(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") saveTitle(note.id); if (e.key === "Escape") setEditingTitleId(null); }}
-                        className="flex-1 bg-white/5 border border-white/20 rounded-lg px-2 py-1 text-white text-sm font-semibold focus:outline-none focus:border-primary/50 min-w-0"
-                      />
-                      <button onClick={() => saveTitle(note.id)} className="text-emerald-400 hover:text-emerald-300 p-0.5 flex-shrink-0"><Check size={14} /></button>
-                      <button onClick={() => setEditingTitleId(null)} className="text-muted-foreground hover:text-white p-0.5 flex-shrink-0"><X size={14} /></button>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-1 group/title">
-                      <h3 className="font-semibold text-white text-sm leading-snug line-clamp-2 flex-1">{note.title}</h3>
-                      <button onClick={e => startEditTitle(e, note)} className="opacity-0 group-hover/title:opacity-100 text-muted-foreground hover:text-white transition-all p-0.5 flex-shrink-0 mt-0.5">
-                        <Edit2 size={11} />
-                      </button>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {format(new Date(note.created_at), "d 'de' MMMM 'de' yyyy · HH:mm", { locale: ptBR })}
-                  </p>
-                </div>
-              </div>
 
-              {/* Tipo + duração */}
-              <div className="flex items-center gap-2 pl-12 flex-wrap">
-                {note.meeting_type && note.meeting_type !== "Outro" && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${meetingTypeColor[note.meeting_type] ?? meetingTypeColor["Outro"]}`}>
-                    {note.meeting_type}
-                  </span>
-                )}
-                {note.duration_seconds && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock size={10} />
-                    {fmtDuration(note.duration_seconds)}
-                  </span>
-                )}
-                {note.audio_url && (
-                  <span className="flex items-center gap-1 text-xs text-primary/70">
-                    <Play size={10} />
-                    áudio
-                  </span>
-                )}
-              </div>
-
-              {note.summary && (
-                <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 pl-12">
-                  {note.summary.replace(/#+\s*/g, "").replace(/\n/g, " ").trim()}
-                </p>
-              )}
-
-              {/* Tags */}
-              {note.tags && note.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pl-12">
-                  {note.tags.slice(0, 4).map(tag => (
-                    <span key={tag} className="text-xs bg-white/5 text-muted-foreground px-2 py-0.5 rounded-full">
-                      #{tag}
+                {/* Type + duration */}
+                <div className="flex items-center gap-2 pl-12 flex-wrap">
+                  {note.meeting_type && note.meeting_type !== "Outro" && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${meetingTypeColor[note.meeting_type] ?? meetingTypeColor["Outro"]}`}>
+                      {note.meeting_type}
                     </span>
-                  ))}
+                  )}
+                  {note.duration_seconds && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock size={10} />
+                      {fmtDuration(note.duration_seconds)}
+                    </span>
+                  )}
+                  {note.audio_url && (
+                    <span className="flex items-center gap-1 text-xs text-primary/70">
+                      <Play size={10} />
+                      áudio
+                    </span>
+                  )}
                 </div>
-              )}
 
-              <div className="flex items-center gap-3 pl-12 mt-auto pt-1 border-t border-white/5">
-                {note.transcription && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <FileText size={11} />
-                    {Math.round(note.transcription.split(" ").length)} palavras
-                  </span>
+                {/* Attendees */}
+                {note.attendees && note.attendees.length > 0 && (
+                  <div className="flex items-center gap-1.5 pl-12 flex-wrap">
+                    <Users size={11} className="text-muted-foreground flex-shrink-0" />
+                    {note.attendees.slice(0, 3).map(a => (
+                      <span key={a} className="text-xs bg-white/5 text-muted-foreground px-2 py-0.5 rounded-full">{a}</span>
+                    ))}
+                    {note.attendees.length > 3 && (
+                      <span className="text-xs text-muted-foreground">+{note.attendees.length - 3}</span>
+                    )}
+                  </div>
                 )}
-                {note.action_items && note.action_items.length > 0 && (
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <CheckSquare size={11} />
-                    {note.action_items.length} ações
-                  </span>
+
+                {note.summary && (
+                  <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 pl-12">
+                    {note.summary.replace(/#+\s*/g, "").replace(/\n/g, " ").trim()}
+                  </p>
                 )}
-                <span className="text-xs text-primary ml-auto">Ver nota →</span>
-              </div>
-            </motion.div>
-          ))}
+
+                {/* Tags */}
+                {note.tags && note.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pl-12">
+                    {note.tags.slice(0, 4).map(tag => (
+                      <span key={tag} className="text-xs bg-white/5 text-muted-foreground px-2 py-0.5 rounded-full">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 pl-12 mt-auto pt-1 border-t border-white/5">
+                  {note.transcription && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <FileText size={11} />
+                      {Math.round(note.transcription.split(" ").length)} palavras
+                    </span>
+                  )}
+                  {note.action_items && note.action_items.length > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <CheckSquare size={11} />
+                      {note.action_items.length} ações
+                    </span>
+                  )}
+                  <span className="text-xs text-primary ml-auto">Ver nota →</span>
+                </div>
+              </motion.div>
+            );
+          })}
         </div>
       )}
 
@@ -415,7 +542,7 @@ export default function NotesPage() {
                         {format(new Date(selected.created_at), "d 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
                       </p>
                       {selected.meeting_type && selected.meeting_type !== "Outro" && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${meetingTypeColor[selected.meeting_type] ?? meetingTypeColor["Outro"]}`}>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${meetingTypeColor[selected.meeting_type] ?? meetingTypeColor["Outro"]}`}>
                           {selected.meeting_type}
                         </span>
                       )}
@@ -441,13 +568,32 @@ export default function NotesPage() {
               {/* Modal body */}
               <div className="overflow-y-auto px-6 py-5 space-y-5 custom-scrollbar">
 
-                {/* Reprodutor de áudio */}
+                {/* Audio player */}
                 {selected.audio_url && (
                   <div>
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
                       <Play size={12} /> Reproduzir Gravação
                     </h3>
-                    <AudioPlayer src={selected.audio_url} />
+                    <SignedAudioPlayer audioPath={selected.audio_url} />
+                  </div>
+                )}
+
+                {/* Attendees */}
+                {selected.attendees && selected.attendees.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <Users size={12} /> Participantes
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {selected.attendees.map(a => (
+                        <span key={a} className="flex items-center gap-1.5 text-sm bg-white/5 border border-white/10 px-3 py-1.5 rounded-full text-white/80">
+                          <span className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary flex-shrink-0">
+                            {a[0]?.toUpperCase()}
+                          </span>
+                          {a}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -462,9 +608,6 @@ export default function NotesPage() {
                     ))}
                   </div>
                 )}
-
-                {/* Participantes */}
-                {selected.meeting_type === "1:1" || (selected.tags && selected.tags.length > 0) ? null : null}
 
                 {/* Action Items */}
                 {selected.action_items && selected.action_items.length > 0 && (
