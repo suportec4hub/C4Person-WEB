@@ -583,8 +583,8 @@ export default function Dashboard() {
     return `${m}:${s}`;
   };
 
-  // 10 minutos por fatia — ~2-4 MB cada (Opus/WebM de voz; seguro abaixo de 4.5 MB do Vercel)
-  const SEGMENT_MS = 10 * 60 * 1000;
+  // 5 minutos por fatia — ~1-2 MB cada (Opus/WebM de voz; seguro abaixo do limite de 4.5 MB do Vercel)
+  const SEGMENT_MS = 5 * 60 * 1000;
 
   const startRecording = async () => {
     try {
@@ -697,8 +697,29 @@ export default function Dashboard() {
     return { noteId, audioUrl };
   };
 
+  const [processingError, setProcessingError] = useState<string | null>(null);
+
+  /** Extrai a mensagem de erro de uma resposta HTTP, mesmo quando não é JSON */
+  const extractApiError = async (res: Response, fallback: string): Promise<string> => {
+    try {
+      const text = await res.text();
+      try {
+        const parsed = JSON.parse(text);
+        return parsed.error || fallback;
+      } catch {
+        // Resposta não é JSON (ex: HTML de timeout do Vercel)
+        const plain = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+        console.error(`[process-audio] HTTP ${res.status}:`, plain.slice(0, 400));
+        return plain.slice(0, 200) || `HTTP ${res.status} — ${fallback}`;
+      }
+    } catch {
+      return `HTTP ${res.status} — ${fallback}`;
+    }
+  };
+
   const processSegments = async (segments: Blob[]) => {
     setIsProcessing(true);
+    setProcessingError(null);
     setProcessingProgress({ current: 0, total: segments.length, phase: "transcribe" });
     try {
       // Get fresh user ID at save time — avoids stale closure from startRecording
@@ -710,13 +731,16 @@ export default function Dashboard() {
       for (let i = 0; i < segments.length; i++) {
         setProcessingProgress({ current: i + 1, total: segments.length, phase: "transcribe" });
 
+        const sizeMB = (segments[i].size / 1024 / 1024).toFixed(1);
+        console.log(`[process-audio] segmento ${i + 1}/${segments.length} — ${sizeMB} MB`);
+
         // Para gravações muito curtas (1 segmento), usa modo full direto
         if (segments.length === 1) {
           const fd = new FormData();
           fd.append("file", segments[i], "recording.webm");
           fd.append("mode", "full");
           const res = await fetch("/api/process-audio", { method: "POST", body: fd });
-          if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Erro ao processar."); }
+          if (!res.ok) throw new Error(await extractApiError(res, "Erro ao processar o áudio."));
           const data = await res.json();
           const saved = await saveNote(uid, data);
           setResult({ ...data, audio_url: saved?.audioUrl });
@@ -729,7 +753,7 @@ export default function Dashboard() {
         fd.append("file", segments[i], `segment_${i + 1}.webm`);
         fd.append("mode", "transcribe");
         const res = await fetch("/api/process-audio", { method: "POST", body: fd });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Erro no segmento ${i + 1}.`); }
+        if (!res.ok) throw new Error(await extractApiError(res, `Erro no segmento ${i + 1} de ${segments.length}.`));
         const data = await res.json();
         fullTranscript += (i > 0 ? " " : "") + data.transcription;
       }
@@ -740,7 +764,7 @@ export default function Dashboard() {
       fd.append("mode", "summarize");
       fd.append("transcript", fullTranscript);
       const res = await fetch("/api/process-audio", { method: "POST", body: fd });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || "Erro ao gerar resumo."); }
+      if (!res.ok) throw new Error(await extractApiError(res, "Erro ao gerar resumo."));
       const sumData = await res.json();
 
       const saved = await saveNote(uid, { transcription: fullTranscript, ...sumData });
@@ -748,9 +772,8 @@ export default function Dashboard() {
       setSelectedActions(sumData.actionItems ?? []);
 
     } catch (error) {
-      console.error(error);
-      const msg = error instanceof Error ? error.message : "Erro desconhecido.";
-      alert(`Erro ao processar o áudio:\n\n${msg}`);
+      console.error("[processSegments]", error);
+      setProcessingError(error instanceof Error ? error.message : "Erro desconhecido.");
     } finally {
       setIsProcessing(false);
       setProcessingProgress({ current: 0, total: 0, phase: "" });
@@ -782,6 +805,7 @@ export default function Dashboard() {
       setSelectedActions([]);
       setImportSuccess(false);
       setRecordingTitle("");
+      setProcessingError(null);
       setProcessingProgress({ current: 0, total: 0, phase: "" });
       audioChunksRef.current = [];
       initChunkRef.current = null;
@@ -1502,7 +1526,7 @@ export default function Dashboard() {
                             </div>
                           </div>
                           <p className="text-xs text-muted-foreground text-center">
-                            Reunião de ~{processingProgress.total * 10} min · {processingProgress.total} segmentos de 10 min
+                            Reunião de ~{processingProgress.total * 5} min · {processingProgress.total} segmentos de 5 min
                           </p>
                         </>
                       ) : (
@@ -1538,9 +1562,21 @@ export default function Dashboard() {
                         </button>
                       )}
                       
-                      <p className="mt-8 text-muted-foreground text-center text-sm">
+                      {processingError && (
+                        <div className="mt-6 w-full max-w-sm bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+                          <p className="text-sm font-semibold text-red-400 mb-1">Erro ao processar o áudio</p>
+                          <p className="text-xs text-red-300/80 leading-relaxed">{processingError}</p>
+                          <button
+                            onClick={() => setProcessingError(null)}
+                            className="mt-2 text-xs text-red-400 hover:text-red-300 underline"
+                          >
+                            Fechar
+                          </button>
+                        </div>
+                      )}
+                      <p className="mt-8 text-muted-foreground text-center text-sm whitespace-pre-line">
                         {isRecording
-                          ? `Gravando… Clique no quadrado para parar.\nO áudio será processado em segmentos de 10 min automaticamente.`
+                          ? `Gravando… Clique no quadrado para parar.\nO áudio é processado em segmentos de 5 min automaticamente.`
                           : "Clique no microfone para começar a gravar.\nSuporta até 10 horas de reunião."}
                       </p>
                     </>
