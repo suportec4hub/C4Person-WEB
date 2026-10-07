@@ -52,6 +52,16 @@ interface Debt {
   created_at: string;
 }
 
+interface BankAccount {
+  id: string;
+  pluggy_account_id: string;
+  name: string;
+  type: string;
+  balance: number;
+  institution_name: string | null;
+  last_synced_at: string | null;
+}
+
 interface Profile {
   salary_mode: "full" | "split";
   salary_amount: number;
@@ -61,6 +71,7 @@ interface Profile {
   pluggy_item_id: string | null;
   pluggy_client_id: string | null;
   pluggy_client_secret: string | null;
+  last_pluggy_sync_at: string | null;
 }
 
 export default function FinancePage() {
@@ -103,7 +114,8 @@ export default function FinancePage() {
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(new Date()));
 
   /* ── profile / salary / partner ── */
-  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null, pluggy_item_id: null, pluggy_client_id: null, pluggy_client_secret: null });
+  const [profile, setProfile] = useState<Profile>({ salary_mode: "full", salary_amount: 0, salary_amount_2: 0, invite_code: null, partner_id: null, pluggy_item_id: null, pluggy_client_id: null, pluggy_client_secret: null, last_pluggy_sync_at: null });
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [pluggyConnecting, setPluggyConnecting] = useState(false);
   const [pluggySyncing, setPluggySyncing] = useState(false);
   const [pluggyToken, setPluggyToken] = useState<string | null>(null);
@@ -145,12 +157,14 @@ export default function FinancePage() {
   }, []);
 
   const fetchProfile = useCallback(async (uid: string) => {
-    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,salary_amount_2,invite_code,partner_id,pluggy_item_id,pluggy_client_id,pluggy_client_secret").eq("id", uid).single();
+    const { data } = await supabase.from("profiles").select("salary_mode,salary_amount,salary_amount_2,invite_code,partner_id,pluggy_item_id,pluggy_client_id,pluggy_client_secret,last_pluggy_sync_at").eq("id", uid).single();
     if (data) {
       setProfile(data as Profile);
       setPluggyClientId(data.pluggy_client_id ?? "");
       setPluggyClientSecret(data.pluggy_client_secret ?? "");
     }
+    const { data: baData } = await supabase.from("bank_accounts").select("*").eq("user_id", uid).order("name");
+    if (baData) setBankAccounts(baData as BankAccount[]);
   }, []);
 
   /* ── derived: transactions filtered to viewMonth ── */
@@ -635,15 +649,32 @@ export default function FinancePage() {
     } catch { /* noop */ }
 
     const channel = supabase.channel("finance-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "transactions" }, (p) => {
+        fetchData();
+        if (p.new?.source === "pluggy") {
+          const sign = p.new.type === "in" ? "+" : "-";
+          const val  = Number(p.new.amount ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+          undoToast(`🏦 Nova transação do banco: ${p.new.name} (${sign}${val})`, () => {});
+        }
+      })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "transactions" }, fetchData)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "transactions" }, (p) => setTransactions(prev => prev.filter(t => t.id !== p.old.id)))
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "budgets" }, fetchData)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "budgets" }, fetchData)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "budgets" }, (p) => setBudgets(prev => prev.filter(b => b.id !== p.old.id)))
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "debts" }, fetchData)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "debts" }, (p) => {
+        fetchData();
+        if (p.new?.source === "pluggy") {
+          undoToast(`⚠️ Nova dívida detectada: ${p.new.name}`, () => {});
+        }
+      })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "debts" }, fetchData)
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "debts" }, (p) => setDebts(prev => prev.filter(d => d.id !== p.old.id)))
+      .on("postgres_changes", { event: "*", schema: "public", table: "bank_accounts" }, () => {
+        supabase.from("bank_accounts").select("*").then(({ data }) => {
+          if (data) setBankAccounts(data as BankAccount[]);
+        });
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchData, fetchProfile]);
@@ -887,7 +918,7 @@ export default function FinancePage() {
     }
     setPluggySyncing(true);
     try {
-      const r = await fetch("/api/pluggy/sync-debts", {
+      const r = await fetch("/api/pluggy/sync-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemId }),
@@ -897,7 +928,10 @@ export default function FinancePage() {
         undoToast(`Erro ao importar: ${d.error}`, () => {});
       } else {
         setProfile(p => ({ ...p, pluggy_item_id: itemId }));
-        undoToast(`${d.imported ?? 0} dívida(s) importada(s) do Open Finance!`, () => {});
+        const parts = [];
+        if (d.importedTx)    parts.push(`${d.importedTx} transaç${d.importedTx === 1 ? "ão" : "ões"}`);
+        if (d.importedDebts) parts.push(`${d.importedDebts} dívida${d.importedDebts === 1 ? "" : "s"}`);
+        undoToast(parts.length ? `Importado: ${parts.join(" e ")}!` : "Banco conectado! Nenhum dado novo.", () => {});
         fetchData();
       }
     } catch {
@@ -1399,6 +1433,42 @@ export default function FinancePage() {
           </div>
         );
       })()}
+
+      {/* ── Contas bancárias conectadas ── */}
+      {bankAccounts.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+          className="mb-6"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium flex items-center gap-2">
+              <Wallet size={13} className="text-emerald-400" />
+              Contas conectadas
+            </p>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[10px] text-emerald-400 font-medium">Sincronizado automaticamente</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {bankAccounts.map(ba => (
+              <div key={ba.id} className="glass-card p-3 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] text-muted-foreground truncate">{ba.institution_name ?? ba.name}</p>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold shrink-0 ml-1">{ba.type}</span>
+                </div>
+                <p className="text-sm font-bold text-white truncate">{ba.name}</p>
+                <p className={`text-base font-bold ${ba.balance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {Number(ba.balance).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                </p>
+                {ba.last_synced_at && (
+                  <p className="text-[9px] text-muted-foreground">
+                    Sync: {new Date(ba.last_synced_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Dívidas: Open Finance + Active Debt Cards ── */}
       <motion.div
