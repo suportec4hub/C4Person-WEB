@@ -15,12 +15,25 @@ const supabaseAdmin = (() => {
   return createClient(url, key);
 })();
 
-async function upsertBankAccount(payload: Record<string, unknown>, onConflict: string) {
-  // Try with logo column first; if it errors (column not yet migrated), retry without it
-  const { error } = await supabaseAdmin.from("bank_accounts").upsert(payload, { onConflict });
+async function putBankAccount(userId: string, pluggyAccountId: string, payload: Record<string, unknown>) {
+  const { data: existing } = await supabaseAdmin
+    .from("bank_accounts")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("pluggy_account_id", pluggyAccountId)
+    .maybeSingle();
+
+  const tryWrite = async (p: Record<string, unknown>) => {
+    if (existing) {
+      return supabaseAdmin.from("bank_accounts").update(p).eq("id", existing.id);
+    }
+    return supabaseAdmin.from("bank_accounts").insert(p);
+  };
+
+  const { error } = await tryWrite(payload);
   if (error?.message?.includes("institution_logo_url")) {
     const { institution_logo_url: _omit, ...rest } = payload;
-    return supabaseAdmin.from("bank_accounts").upsert(rest, { onConflict });
+    return tryWrite(rest);
   }
   return { error };
 }
@@ -69,7 +82,13 @@ export async function POST(req: Request) {
 
     // Pluggy item status values that require user re-authentication
     const EXPIRED_STATUSES = new Set(["LOGIN_ERROR", "WAITING_USER_INPUT", "OUTDATED"]);
-    const itemStatus = (item as any).status ?? "";
+    // "UPDATING" means Pluggy is still fetching data — wait and retry once
+    let itemStatus = (item as any).status ?? "";
+    if (itemStatus === "UPDATING") {
+      await new Promise(r => setTimeout(r, 5000));
+      const refreshed = await pluggy.fetchItem(itemId);
+      itemStatus = (refreshed as any).status ?? itemStatus;
+    }
     if (EXPIRED_STATUSES.has(itemStatus)) {
       const institutionName = item.connector?.name ?? "banco";
       return NextResponse.json({
@@ -106,7 +125,9 @@ export async function POST(req: Request) {
 
     for (const acc of accounts) {
       // ── Bank account balance + credit data ───────────────────────────────
-      const { error: baErr } = await upsertBankAccount(
+      const { error: baErr } = await putBankAccount(
+        user.id,
+        acc.id,
         {
           user_id:               user.id,
           pluggy_account_id:     acc.id,
@@ -119,8 +140,7 @@ export async function POST(req: Request) {
           credit_limit:          acc.creditData?.creditLimit          != null ? Number(acc.creditData.creditLimit)            : null,
           available_credit:      acc.creditData?.availableCreditLimit != null ? Number(acc.creditData.availableCreditLimit)   : null,
           last_synced_at:        now.toISOString(),
-        },
-        "user_id,pluggy_account_id"
+        }
       );
       if (!baErr) importedAccounts++;
 
