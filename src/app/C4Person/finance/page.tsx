@@ -17,7 +17,7 @@ import {
   Wallet, Plus, X, ArrowUpRight, ArrowDownRight,
   TrendingUp, TrendingDown, Search, Trash2, PiggyBank, Target, Download,
   ChevronLeft, ChevronRight, Settings, Users, Copy, Check, CalendarDays, Pencil,
-  CreditCard, Sparkles,
+  CreditCard, Sparkles, Loader2,
 } from "lucide-react";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCategoryColor } from "@/lib/categories";
 
@@ -942,6 +942,57 @@ export default function FinancePage() {
     }
   }, [undoToast]);
 
+  const resyncPluggy = useCallback(async () => {
+    setPluggySyncing(true);
+    try {
+      // Collect all item IDs from pluggy_items table
+      const { data: items } = await supabase.from("pluggy_items").select("item_id");
+      let itemIds: string[] = (items ?? []).map((r: any) => r.item_id);
+
+      // Fall back to profiles.pluggy_item_id for backward compat
+      if (itemIds.length === 0 && profile.pluggy_item_id) {
+        itemIds = [profile.pluggy_item_id];
+      }
+
+      if (itemIds.length === 0) {
+        undoToast("Nenhum banco conectado. Conecte primeiro.", () => {});
+        return;
+      }
+
+      let totalAccounts = 0, totalTx = 0, totalDebts = 0;
+      for (const itemId of itemIds) {
+        const r = await fetch("/api/pluggy/sync-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemId }),
+        });
+        const d = await r.json();
+        if (!d.error) {
+          totalAccounts += d.importedAccounts ?? 0;
+          totalTx       += d.importedTx       ?? 0;
+          totalDebts    += d.importedDebts     ?? 0;
+        }
+      }
+
+      await fetchData();
+      const parts = [
+        totalAccounts && `${totalAccounts} conta${totalAccounts > 1 ? "s" : ""}`,
+        totalTx       && `${totalTx} transaç${totalTx === 1 ? "ão" : "ões"}`,
+        totalDebts    && `${totalDebts} dívida${totalDebts > 1 ? "s" : ""}`,
+      ].filter(Boolean);
+      undoToast(
+        parts.length
+          ? `Sincronizado: ${parts.join(", ")} de ${itemIds.length} banco${itemIds.length > 1 ? "s" : ""}.`
+          : `${itemIds.length} banco${itemIds.length > 1 ? "s" : ""} sincronizado${itemIds.length > 1 ? "s" : ""}!`,
+        () => {}
+      );
+    } catch {
+      undoToast("Erro ao sincronizar. Tente novamente.", () => {});
+    } finally {
+      setPluggySyncing(false);
+    }
+  }, [profile.pluggy_item_id, fetchData, undoToast]);
+
   const handlePluggySuccess = useCallback(async (itemData: any) => {
     setPluggyToken(null);
     // Support both { item: { id } } and direct item object
@@ -1476,11 +1527,17 @@ export default function FinancePage() {
           CREDIT_CARD: "Cartão de Crédito", CREDIT: "Crédito",
           LOAN: "Empréstimo", FINANCING: "Financiamento",
         };
-        const BANK_COLORS = ["#10b981","#3b82f6","#8b5cf6","#f59e0b","#06b6d4","#ec4899","#ef4444","#84cc16"];
-        const bankColor = (name: string) => {
+        const BANK_PALETTE = [
+          ["#10b981","#064e3b"], ["#3b82f6","#1e3a5f"], ["#8b5cf6","#3b1f6e"],
+          ["#f59e0b","#78350f"], ["#06b6d4","#164e63"], ["#ec4899","#831843"],
+          ["#ef4444","#7f1d1d"], ["#84cc16","#365314"],
+        ];
+        const bankGradient = (name: string) => {
           let h = 0; for (const c of name) h = c.charCodeAt(0) + ((h << 5) - h);
-          return BANK_COLORS[Math.abs(h) % BANK_COLORS.length];
+          return BANK_PALETTE[Math.abs(h) % BANK_PALETTE.length];
         };
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+        const todayStr   = new Date().toISOString().slice(0, 10);
 
         return (
           <motion.div
@@ -1488,80 +1545,95 @@ export default function FinancePage() {
             className="mb-8"
           >
             {/* Section header */}
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium flex items-center gap-2">
-                  <Wallet size={13} className="text-emerald-400" /> Open Finance
-                </p>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[10px] text-emerald-400 font-medium">{banksByInstitution.length} banco{banksByInstitution.length > 1 ? "s" : ""} conectado{banksByInstitution.length > 1 ? "s" : ""}</span>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-sm font-semibold text-white">Open Finance</span>
+                </div>
+                <span className="text-xs text-muted-foreground bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+                  {banksByInstitution.length} banco{banksByInstitution.length > 1 ? "s" : ""}
+                </span>
               </div>
-              <div className="text-right">
-                <span className="text-[10px] text-muted-foreground">Saldo total em conta </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Saldo em contas</span>
                 <span className={`text-sm font-bold ${totalBankBalance >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmt(totalBankBalance)}</span>
               </div>
             </div>
 
-            {/* Bank accordion list */}
-            <div className="flex flex-col gap-2">
+            {/* Bank cards */}
+            <div className="flex flex-col gap-3">
               {banksByInstitution.map(bank => {
-                const color = bankColor(bank.name);
+                const [accentColor, darkColor] = bankGradient(bank.name);
                 const isOpen = expandedBank === bank.name;
-                const initials = bank.name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase().slice(0, 2);
+                const initial = bank.name.trim()[0]?.toUpperCase() ?? "B";
                 const creditAccounts = bank.accounts.filter(a => ["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type));
                 const assetAccounts  = bank.accounts.filter(a => !["CREDIT_CARD","CREDIT","LOAN","FINANCING"].includes(a.type));
+                const accountNames   = bank.accounts.map(a => a.name);
+                const bankTx = transactions.filter(t =>
+                  t.source === "pluggy" &&
+                  t.transaction_date >= monthStart &&
+                  t.transaction_date <= todayStr &&
+                  Array.isArray((t as any).payment_source) &&
+                  (t as any).payment_source.some((s: string) => accountNames.includes(s))
+                ).slice(0, 8);
+
                 return (
-                  <div key={bank.name} className="glass-card overflow-hidden">
-                    {/* Collapsed row — always visible */}
+                  <div
+                    key={bank.name}
+                    className="rounded-2xl overflow-hidden border border-white/8"
+                    style={{ background: `linear-gradient(135deg, ${darkColor}40 0%, rgba(0,0,0,0.3) 100%)` }}
+                  >
+                    {/* Header row */}
                     <button
                       onClick={() => setExpandedBank(isOpen ? null : bank.name)}
-                      className="w-full flex items-center gap-4 p-4 hover:bg-white/5 transition-colors text-left"
+                      className="w-full flex items-center gap-4 px-5 py-4 hover:bg-white/5 transition-colors text-left"
                     >
-                      {/* Logo or initials avatar */}
+                      {/* Logo / avatar */}
                       {bank.logoUrl ? (
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-white/10 border border-white/10 overflow-hidden">
+                        <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 bg-white p-1.5 shadow-lg">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={bank.logoUrl} alt={bank.name} className="w-8 h-8 object-contain" />
+                          <img src={bank.logoUrl} alt={bank.name} className="w-full h-full object-contain" />
                         </div>
                       ) : (
                         <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-lg"
-                          style={{ backgroundColor: `${color}30`, border: `1px solid ${color}40`, color }}
+                          className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 text-white font-bold text-base shadow-lg select-none"
+                          style={{ background: `linear-gradient(135deg, ${accentColor} 0%, ${darkColor} 100%)` }}
                         >
-                          {initials}
+                          {initial}
                         </div>
                       )}
 
-                      {/* Name + status */}
+                      {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-white truncate">{bank.name}</p>
-                          <span className="flex items-center gap-1 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            <span className="text-[9px] text-emerald-400 font-medium">OK</span>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="text-sm font-semibold text-white truncate capitalize">{bank.name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}</p>
+                          <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 shrink-0">
+                            <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                            <span className="text-[9px] text-emerald-400 font-semibold">Sincronizado</span>
                           </span>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {assetAccounts.length > 0 && `${assetAccounts.length} conta${assetAccounts.length > 1 ? "s" : ""}`}
-                          {assetAccounts.length > 0 && creditAccounts.length > 0 && " · "}
-                          {creditAccounts.length > 0 && `${creditAccounts.length} cartão${creditAccounts.length > 1 ? "ões" : ""}`}
-                          {bank.lastSync && ` · Sync ${new Date(bank.lastSync).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                        <p className="text-[11px] text-muted-foreground">
+                          {[
+                            assetAccounts.length > 0 && `${assetAccounts.length} conta${assetAccounts.length > 1 ? "s" : ""}`,
+                            creditAccounts.length > 0 && `${creditAccounts.length} cartão${creditAccounts.length > 1 ? "ões" : ""}`,
+                            bank.lastSync && `atualizado ${format(parseISO(bank.lastSync), "dd/MM HH:mm")}`,
+                          ].filter(Boolean).join(" · ")}
                         </p>
                       </div>
 
-                      {/* Asset balance */}
-                      <div className="text-right shrink-0">
-                        <p className={`text-base font-bold ${bank.assetBalance >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {/* Balances */}
+                      <div className="text-right shrink-0 mr-2">
+                        <p className={`text-lg font-bold leading-none ${bank.assetBalance >= 0 ? "text-white" : "text-red-400"}`}>
                           {fmt(bank.assetBalance)}
                         </p>
-                        <p className="text-[9px] text-muted-foreground">em conta</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">em conta</p>
                       </div>
 
                       {/* Chevron */}
-                      <ChevronRight
-                        size={16}
-                        className={`text-muted-foreground shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
-                      />
+                      <div className={`w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}>
+                        <ChevronRight size={13} className="text-muted-foreground" />
+                      </div>
                     </button>
 
                     {/* Expanded detail */}
@@ -1571,23 +1643,23 @@ export default function FinancePage() {
                           initial={{ height: 0, opacity: 0 }}
                           animate={{ height: "auto", opacity: 1 }}
                           exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.22, ease: "easeInOut" }}
+                          transition={{ duration: 0.25, ease: "easeInOut" }}
                           className="overflow-hidden"
                         >
-                          <div className="px-4 pb-4 pt-1 border-t border-white/5 flex flex-col gap-3">
+                          <div className="px-5 pb-5 pt-1 border-t border-white/8 space-y-5">
 
                             {/* Asset accounts */}
                             {assetAccounts.length > 0 && (
                               <div>
-                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-medium">Contas</p>
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-3 font-semibold">Contas</p>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                   {assetAccounts.map(acc => (
-                                    <div key={acc.id} className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center justify-between gap-3">
+                                    <div key={acc.id} className="rounded-xl p-4 bg-white/4 border border-white/8 flex items-center justify-between gap-3">
                                       <div className="min-w-0">
                                         <p className="text-xs font-medium text-white truncate">{acc.name}</p>
-                                        <p className="text-[10px] text-muted-foreground">{TYPE_LABEL[acc.type] ?? acc.type}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-0.5">{TYPE_LABEL[acc.type] ?? acc.type}</p>
                                       </div>
-                                      <p className={`text-sm font-bold shrink-0 ${Number(acc.balance) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                      <p className={`text-base font-bold shrink-0 ${Number(acc.balance) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                                         {fmt(Number(acc.balance))}
                                       </p>
                                     </div>
@@ -1596,44 +1668,55 @@ export default function FinancePage() {
                               </div>
                             )}
 
-                            {/* Credit accounts */}
+                            {/* Credit / card accounts */}
                             {creditAccounts.length > 0 && (
                               <div>
-                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-medium">Crédito</p>
-                                <div className="flex flex-col gap-2">
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-3 font-semibold">Crédito</p>
+                                <div className="space-y-3">
                                   {creditAccounts.map(acc => {
-                                    const used      = Math.abs(Number(acc.balance));
+                                    const used      = acc.credit_limit != null && acc.available_credit != null
+                                      ? Number(acc.credit_limit) - Number(acc.available_credit)
+                                      : Math.abs(Number(acc.balance));
                                     const limit     = acc.credit_limit ? Number(acc.credit_limit) : null;
                                     const available = acc.available_credit ? Number(acc.available_credit) : (limit != null ? limit - used : null);
                                     const usedPct   = limit != null && limit > 0 ? Math.min(100, (used / limit) * 100) : null;
-                                    const barColor  = usedPct != null ? (usedPct >= 80 ? "#ef4444" : usedPct >= 50 ? "#f59e0b" : "#10b981") : "#f59e0b";
+                                    const barColor  = usedPct != null
+                                      ? (usedPct >= 80 ? "#ef4444" : usedPct >= 50 ? "#f59e0b" : "#10b981")
+                                      : "#6b7280";
                                     return (
-                                      <div key={acc.id} className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/15">
-                                        <div className="flex items-center justify-between mb-2">
+                                      <div key={acc.id} className="rounded-xl p-4 bg-white/4 border border-white/8">
+                                        {/* Card name + usage */}
+                                        <div className="flex items-start justify-between gap-3 mb-3">
                                           <div className="min-w-0">
-                                            <p className="text-xs font-medium text-white truncate">{acc.name}</p>
-                                            <p className="text-[10px] text-muted-foreground">{TYPE_LABEL[acc.type] ?? acc.type}</p>
+                                            <p className="text-xs font-semibold text-white truncate">{acc.name}</p>
+                                            <p className="text-[10px] text-muted-foreground mt-0.5">{TYPE_LABEL[acc.type] ?? acc.type}</p>
                                           </div>
-                                          <span className="text-xs font-bold text-orange-400 shrink-0">{fmt(used)} usado</span>
+                                          <div className="text-right shrink-0">
+                                            <p className="text-sm font-bold text-white">{fmt(used)}</p>
+                                            <p className="text-[10px] text-muted-foreground">utilizado</p>
+                                          </div>
                                         </div>
-                                        {limit != null && (
+                                        {/* Usage bar */}
+                                        {limit != null ? (
                                           <>
-                                            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mb-1.5">
-                                              <div
-                                                className="h-full rounded-full transition-all duration-500"
-                                                style={{ width: `${usedPct}%`, backgroundColor: barColor }}
+                                            <div className="h-2 rounded-full bg-white/8 overflow-hidden mb-2">
+                                              <motion.div
+                                                className="h-full rounded-full"
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${usedPct}%` }}
+                                                transition={{ duration: 0.6, ease: "easeOut" }}
+                                                style={{ backgroundColor: barColor }}
                                               />
                                             </div>
                                             <div className="flex justify-between text-[10px]">
-                                              <span className="text-muted-foreground">Limite {fmt(limit)}</span>
-                                              <span style={{ color: barColor }}>
-                                                {available != null ? `${fmt(available)} disponível` : `${usedPct?.toFixed(0)}% utilizado`}
+                                              <span className="text-muted-foreground">Limite: {fmt(limit)}</span>
+                                              <span style={{ color: barColor }} className="font-medium">
+                                                {available != null ? `${fmt(available)} livre` : `${usedPct?.toFixed(0)}% usado`}
                                               </span>
                                             </div>
                                           </>
-                                        )}
-                                        {limit == null && (
-                                          <p className="text-[10px] text-muted-foreground">Limite não disponível — sincronize novamente</p>
+                                        ) : (
+                                          <p className="text-[10px] text-muted-foreground/60">Limite não disponível — reconecte o banco</p>
                                         )}
                                       </div>
                                     );
@@ -1642,36 +1725,41 @@ export default function FinancePage() {
                               </div>
                             )}
 
-                            {/* Recent transactions from this bank */}
-                            {(() => {
-                              const bankTx = transactions
-                                .filter(t => (t as any).source === "pluggy")
-                                .slice(0, 5);
-                              if (bankTx.length === 0) return null;
-                              return (
-                                <div>
-                                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-medium">Últimas transações importadas</p>
-                                  <div className="flex flex-col gap-1">
-                                    {bankTx.map(t => (
-                                      <div key={t.id} className="flex items-center gap-3 py-1.5 border-b border-white/5 last:border-0">
-                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${t.type === "in" ? "bg-emerald-500/10" : "bg-red-500/10"}`}>
-                                          {t.type === "in"
-                                            ? <ArrowUpRight size={12} className="text-emerald-400" />
-                                            : <ArrowDownRight size={12} className="text-red-400" />}
-                                        </div>
-                                        <p className="text-xs text-white flex-1 truncate">{t.name}</p>
-                                        <span className="text-[10px] text-muted-foreground shrink-0">
-                                          {t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM") : ""}
-                                        </span>
-                                        <span className={`text-xs font-bold shrink-0 ${t.type === "in" ? "text-emerald-400" : "text-red-400"}`}>
-                                          {t.type === "in" ? "+" : "−"}{fmt(Number(t.amount))}
-                                        </span>
+                            {/* Current-month transactions for this bank */}
+                            <div>
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Transações deste mês</p>
+                                <span className="text-[10px] text-muted-foreground">{format(new Date(), "MMMM", { locale: ptBR })}</span>
+                              </div>
+                              {bankTx.length === 0 ? (
+                                <p className="text-xs text-muted-foreground/60 italic">Nenhuma transação encontrada neste mês.</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {bankTx.map(t => (
+                                    <div key={t.id} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
+                                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${t.type === "in" ? "bg-emerald-500/12 border border-emerald-500/20" : "bg-red-500/12 border border-red-500/20"}`}>
+                                        {t.type === "in"
+                                          ? <ArrowUpRight size={13} className="text-emerald-400" />
+                                          : <ArrowDownRight size={13} className="text-red-400" />}
                                       </div>
-                                    ))}
-                                  </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium text-white truncate">{t.name}</p>
+                                        {t.category && <p className="text-[10px] text-muted-foreground truncate">{t.category}</p>}
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <p className={`text-xs font-bold ${t.type === "in" ? "text-emerald-400" : "text-red-400"}`}>
+                                          {t.type === "in" ? "+" : "−"}{fmt(Number(t.amount))}
+                                        </p>
+                                        <p className="text-[10px] text-muted-foreground">
+                                          {t.transaction_date ? format(parseISO(t.transaction_date), "dd/MM") : ""}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              );
-                            })()}
+                              )}
+                            </div>
+
                           </div>
                         </motion.div>
                       )}
@@ -1709,14 +1797,35 @@ export default function FinancePage() {
                 {debtAiLoading ? "Analisando…" : "Análise IA"}
               </button>
             )}
-            <button
-              onClick={connectPluggy}
-              disabled={pluggyConnecting || pluggySyncing}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50 font-medium"
-            >
-              <Sparkles size={11} />
-              {pluggyConnecting ? "Conectando…" : pluggySyncing ? "Importando…" : profile.pluggy_item_id ? "Sincronizar Open Finance" : "Conectar banco (Open Finance)"}
-            </button>
+            {bankAccounts.length > 0 ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={resyncPluggy}
+                  disabled={pluggySyncing}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 transition-colors disabled:opacity-50 font-medium"
+                >
+                  {pluggySyncing ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                  {pluggySyncing ? "Sincronizando…" : "Sincronizar bancos"}
+                </button>
+                <button
+                  onClick={connectPluggy}
+                  disabled={pluggyConnecting || pluggySyncing}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50 font-medium"
+                >
+                  <Plus size={11} />
+                  {pluggyConnecting ? "Abrindo…" : "Adicionar banco"}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={connectPluggy}
+                disabled={pluggyConnecting || pluggySyncing}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50 font-medium"
+              >
+                <Sparkles size={11} />
+                {pluggyConnecting ? "Conectando…" : "Conectar banco (Open Finance)"}
+              </button>
+            )}
           </div>
         </div>
 
