@@ -312,9 +312,12 @@ export default function FinancePage() {
   }, []);
 
   /* ── derived: transactions filtered to viewMonth ── */
+  // Pluggy-imported transactions are excluded from income/expense balance to avoid
+  // double-counting with manual entries. They appear only in the bank accounts section.
   const monthlyTx = useMemo(() =>
     transactions.filter(t => {
       if (!t.transaction_date) return false;
+      if (t.source === "pluggy") return false;
       try { return isSameMonth(parseISO(t.transaction_date), viewMonth); } catch { return false; }
     }),
     [transactions, viewMonth]
@@ -331,7 +334,8 @@ export default function FinancePage() {
       const d = subMonths(new Date(), 5 - i);
       const key = format(d, "yyyy-MM");
       const month = transactions.filter(t =>
-        t.transaction_date && format(parseISO(t.transaction_date), "yyyy-MM") === key
+        t.transaction_date && t.source !== "pluggy" &&
+        format(parseISO(t.transaction_date), "yyyy-MM") === key
       );
       return {
         label: format(d, "MMM", { locale: ptBR }),
