@@ -119,20 +119,59 @@ function getGreeting() {
   return "Boa noite";
 }
 
-type BolsaCache = Record<string, { price: number; change: number; changePercent: number }>;
+type BolsaItem = { ticker: string; price: number; change: number; changePercent: number };
 
 function BolsaOverview() {
-  const [cache, setCache] = useState<BolsaCache>({});
+  const [items, setItems] = useState<BolsaItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Try localStorage (user's saved watchlist from bolsa page)
     try {
       const raw = localStorage.getItem("c4p_bolsa_cache");
-      if (raw) setCache(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, { price: number; change: number; changePercent?: number }>;
+        const fromCache = Object.entries(parsed).map(([ticker, d]) => ({
+          ticker,
+          price: d.price,
+          change: d.change,
+          changePercent: d.changePercent ?? 0,
+        }));
+        if (fromCache.length > 0) {
+          setItems(fromCache);
+          setLoading(false);
+          return;
+        }
+      }
     } catch {}
+
+    // Fallback: fetch default tickers from server
+    fetch("/api/market/dashboard")
+      .then(r => r.json())
+      .then(data => { if (data.items?.length) setItems(data.items); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  const tickers = Object.keys(cache);
-  if (tickers.length === 0) return null;
+  if (loading) {
+    return (
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2 px-0.5">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+            <BarChart2 size={13} className="text-emerald-400" />
+            Bolsa de Valores
+          </h3>
+        </div>
+        <div className="flex gap-2">
+          {[1,2,3,4,5].map(i => (
+            <div key={i} className="h-[60px] w-[140px] rounded-xl bg-white/5 animate-pulse shrink-0" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) return null;
 
   return (
     <motion.div
@@ -151,17 +190,16 @@ function BolsaOverview() {
         </Link>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide snap-x snap-mandatory">
-        {tickers.map(ticker => {
-          const d = cache[ticker];
+        {items.map(d => {
           const positive = d.changePercent >= 0;
           return (
             <Link
-              key={ticker}
+              key={d.ticker}
               href="/C4Person/finance/bolsa"
               className="snap-start shrink-0 glass-card px-4 py-3 flex items-center gap-3 hover:border-primary/30 transition-all min-w-[140px]"
             >
               <div className="min-w-0">
-                <p className="text-[11px] font-bold text-muted-foreground tracking-wide">{ticker}</p>
+                <p className="text-[11px] font-bold text-muted-foreground tracking-wide">{d.ticker}</p>
                 <p className="text-sm font-bold text-white leading-tight">
                   R$ {d.price.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
