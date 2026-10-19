@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft, User, Calendar } from "lucide-react";
+import { Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft, User, Calendar, CreditCard } from "lucide-react";
 import Link from "next/link";
 
 export default function LoginClient() {
@@ -13,6 +13,7 @@ export default function LoginClient() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [fullName, setFullName] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -33,6 +34,8 @@ export default function LoginClient() {
     setLoading(true);
 
     try {
+      const cpfDigits = cpf.replace(/\D/g, "");
+
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -40,6 +43,7 @@ export default function LoginClient() {
         router.refresh();
       } else {
         if (!fullName.trim()) { setError("Informe seu nome completo."); setLoading(false); return; }
+        if (cpfDigits.length !== 11) { setError("Informe um CPF válido (11 dígitos)."); setLoading(false); return; }
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -51,6 +55,7 @@ export default function LoginClient() {
             id: data.user.id,
             full_name: fullName.trim(),
             birth_date: birthDate || null,
+            cpf: cpfDigits,
           });
         }
         setSuccessMsg("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
@@ -132,6 +137,27 @@ export default function LoginClient() {
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
                         placeholder="Seu nome completo"
+                        className="w-full bg-background border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground mb-1.5 block">CPF <span className="text-red-400">*</span></label>
+                    <div className="relative">
+                      <CreditCard size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="text"
+                        value={cpf}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
+                          const formatted = digits
+                            .replace(/(\d{3})(\d)/, "$1.$2")
+                            .replace(/(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+                            .replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
+                          setCpf(formatted);
+                        }}
+                        placeholder="000.000.000-00"
+                        inputMode="numeric"
                         className="w-full bg-background border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
                       />
                     </div>

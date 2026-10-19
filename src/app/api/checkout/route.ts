@@ -23,9 +23,11 @@ function asaasHeaders() {
   };
 }
 
-async function findOrCreateCustomer(email: string, name: string, userId: string): Promise<{ id: string } | { error: string }> {
+async function findOrCreateCustomer(
+  email: string, name: string, userId: string, cpfCnpj?: string
+): Promise<{ id: string } | { error: string }> {
   try {
-    // Search by email first
+    // Search existing customer by email
     const searchRes = await fetch(
       `${ASAAS_API}/customers?email=${encodeURIComponent(email)}&limit=1`,
       { headers: asaasHeaders() }
@@ -39,16 +41,25 @@ async function findOrCreateCustomer(email: string, name: string, userId: string)
 
     const searchData = JSON.parse(searchText);
     const existing = searchData.data?.[0];
+
     if (existing?.id) {
-      console.log(`[ASAAS] Customer found: ${existing.id}`);
+      // Update CPF if missing on existing customer
+      if (cpfCnpj && !existing.cpfCnpj) {
+        await fetch(`${ASAAS_API}/customers/${existing.id}`, {
+          method: "PUT",
+          headers: asaasHeaders(),
+          body: JSON.stringify({ cpfCnpj }),
+        });
+        console.log(`[ASAAS] Customer ${existing.id} updated with CPF`);
+      }
       return { id: existing.id };
     }
 
-    // Create new customer
+    // Create new customer with CPF
     const createRes = await fetch(`${ASAAS_API}/customers`, {
       method: "POST",
       headers: asaasHeaders(),
-      body: JSON.stringify({ name, email, externalReference: userId }),
+      body: JSON.stringify({ name, email, externalReference: userId, ...(cpfCnpj ? { cpfCnpj } : {}) }),
     });
     const createText = await createRes.text();
     console.log(`[ASAAS] POST /customers → ${createRes.status}: ${createText.slice(0, 400)}`);
@@ -132,13 +143,14 @@ export async function POST(req: NextRequest) {
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
-      .select("full_name")
+      .select("full_name, cpf")
       .eq("id", user.id)
       .single();
 
     const name = profile?.full_name ?? user.email ?? "Cliente";
+    const cpf = profile?.cpf as string | undefined;
 
-    const customerResult = await findOrCreateCustomer(user.email!, name, user.id);
+    const customerResult = await findOrCreateCustomer(user.email!, name, user.id, cpf);
 
     if ("error" in customerResult) {
       console.error("[Checkout] ASAAS customer error:", customerResult.error);
