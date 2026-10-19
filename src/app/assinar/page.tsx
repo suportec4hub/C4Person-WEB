@@ -1,8 +1,42 @@
 export const dynamic = "force-dynamic";
 import { Lock, Zap, CheckCircle2 } from "lucide-react";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { AssinarActions, AssinarSignOut } from "./AssinarActions";
 
 export default async function AssinarPage() {
+  let hasCpf = false;
+  try {
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+      {
+        cookies: {
+          getAll: () => cookieStore.getAll(),
+          setAll: (list) =>
+            list.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            ),
+        },
+      }
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("cpf")
+        .eq("id", user.id)
+        .single();
+      hasCpf = !!profile?.cpf;
+    }
+  } catch {}
+
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 relative overflow-hidden">
       <div className="fixed top-0 left-[20%] w-[600px] h-[600px] bg-primary/8 rounded-full blur-[140px] pointer-events-none -z-0" />
@@ -49,7 +83,7 @@ export default async function AssinarPage() {
             ))}
           </div>
 
-          <AssinarActions />
+          <AssinarActions hasCpf={hasCpf} />
 
           <p className="mt-4 text-xs text-muted-foreground">
             <CheckCircle2 size={12} className="inline mr-1 text-emerald-400" />

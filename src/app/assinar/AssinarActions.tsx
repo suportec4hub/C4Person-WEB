@@ -31,7 +31,7 @@ export function AssinarSignOut() {
   );
 }
 
-export function AssinarActions() {
+export function AssinarActions({ hasCpf = false }: { hasCpf?: boolean }) {
   const [cpf, setCpf] = useState("");
   const [cpfError, setCpfError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,9 +39,11 @@ export function AssinarActions() {
   const handleCheckout = async () => {
     setCpfError("");
     const digits = cpf.replace(/\D/g, "");
-    if (cpf.trim() && digits.length !== 11) {
-      setCpfError("CPF inválido — informe 11 dígitos.");
-      return;
+    if (!hasCpf) {
+      if (digits.length !== 11) {
+        setCpfError("Informe um CPF válido (11 dígitos).");
+        return;
+      }
     }
 
     setLoading(true);
@@ -72,30 +74,32 @@ export function AssinarActions() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div>
-        <div className="relative">
-          <CreditCard size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            value={cpf}
-            onChange={(e) => {
-              const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
-              const formatted = digits
-                .replace(/(\d{3})(\d)/, "$1.$2")
-                .replace(/(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-                .replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
-              setCpf(formatted);
-              setCpfError("");
-            }}
-            placeholder="CPF (opcional se já cadastrado)"
-            inputMode="numeric"
-            className="w-full bg-background border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
-          />
+      {!hasCpf && (
+        <div>
+          <div className="relative">
+            <CreditCard size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={cpf}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, "").slice(0, 11);
+                const formatted = digits
+                  .replace(/(\d{3})(\d)/, "$1.$2")
+                  .replace(/(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+                  .replace(/(\d{3})\.(\d{3})\.(\d{3})(\d)/, "$1.$2.$3-$4");
+                setCpf(formatted);
+                setCpfError("");
+              }}
+              placeholder="Seu CPF (obrigatório)"
+              inputMode="numeric"
+              className="w-full bg-background border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+            />
+          </div>
+          {cpfError && (
+            <p className="text-xs text-red-400 mt-1.5">{cpfError}</p>
+          )}
         </div>
-        {cpfError && (
-          <p className="text-xs text-red-400 mt-1.5">{cpfError}</p>
-        )}
-      </div>
+      )}
 
       <button
         onClick={handleCheckout}

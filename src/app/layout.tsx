@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { PWARegister } from "@/components/PWARegister";
+import { CookieBanner } from "@/components/CookieBanner";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.variable} antialiased bg-background text-foreground`}>
         <PWARegister />
         {children}
+        <CookieBanner />
       </body>
     </html>
   );
