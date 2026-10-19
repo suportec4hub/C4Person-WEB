@@ -29,15 +29,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("role, trial_ends_at, created_at")
+    .select("role")
     .eq("id", user.id)
     .single();
 
   const isFullAdmin = profile?.role === "ADMIN_C4HUB" || profile?.role === "admin";
   const isElevated = isFullAdmin || profile?.role === "ADM_PADRAO";
-
-  let showTrialBanner = false;
-  let trialEnd: string | null = null;
 
   if (!isElevated) {
     const { data: sub } = await supabaseAdmin
@@ -47,29 +44,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
       .single();
 
     if (sub?.status !== "active") {
-      let trialEndDate: Date;
-      if (profile?.trial_ends_at) {
-        trialEndDate = new Date(profile.trial_ends_at);
-      } else {
-        const base = profile?.created_at ?? user.created_at;
-        trialEndDate = new Date(new Date(base).getTime() + 15 * 24 * 60 * 60 * 1000);
-      }
-
-      if (new Date() > trialEndDate) {
-        redirect("/assinar?expired=true");
-      }
-
-      showTrialBanner = true;
-      trialEnd = trialEndDate.toISOString();
+      redirect("/assinar");
     }
   }
 
   return (
-    <DashboardShell
-      isAdmin={isFullAdmin}
-      showTrialBanner={showTrialBanner}
-      trialEnd={trialEnd}
-    >
+    <DashboardShell isAdmin={isFullAdmin}>
       {children}
     </DashboardShell>
   );

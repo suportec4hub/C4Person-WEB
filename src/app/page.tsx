@@ -83,7 +83,6 @@ const COMPARISON_C4 = [
   "Tarefas + Hábitos + Finanças + IA em um app",
   "IA que conhece todos os seus dados",
   "PWA: instala no iPhone e Android",
-  "15 dias grátis, sem cartão de crédito",
   "R$15,90/mês — tudo incluso",
 ];
 
@@ -91,14 +90,14 @@ const COMPARISON_OTHERS = [
   "5+ apps diferentes para gerenciar",
   "IA genérica sem contexto pessoal",
   "Cada app com sua própria assinatura",
-  "Trials que pedem cartão imediatamente",
+  "Sem integração entre ferramentas",
   "R$150+/mês somando todas as ferramentas",
 ];
 
 const FAQ_ITEMS = [
   {
-    q: "Preciso de cartão de crédito para os 15 dias grátis?",
-    a: "Não. Você cria sua conta com e-mail e senha e já começa a usar. Cartão de crédito só é necessário se você decidir continuar após o trial.",
+    q: "Quais formas de pagamento são aceitas?",
+    a: "Aceitamos PIX, boleto bancário e cartão de crédito. O pagamento é processado de forma segura e a assinatura é ativada imediatamente após a confirmação.",
   },
   {
     q: "Posso cancelar quando quiser?",
@@ -590,22 +589,22 @@ export default function LandingPage() {
               ))}
             </div>
 
-            {/* Trial CTA */}
+            {/* CTA */}
+            <CheckoutButton className="block w-full bg-primary hover:bg-primary/90 text-white py-4 rounded-xl font-bold text-center text-base shadow-[0_4px_30px_rgba(139,92,246,0.35)] transition-all hover:shadow-[0_6px_40px_rgba(139,92,246,0.5)] mb-3">
+              Assinar agora — R$15,90/mês
+            </CheckoutButton>
             <Link
               href="/login"
-              className="block w-full bg-primary hover:bg-primary/90 text-white py-4 rounded-xl font-bold text-center text-base shadow-[0_4px_30px_rgba(139,92,246,0.35)] transition-all hover:shadow-[0_6px_40px_rgba(139,92,246,0.5)] mb-3"
+              className="block w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white py-3.5 rounded-xl font-semibold text-center text-sm transition-all"
             >
-              Começar 15 dias grátis — sem cartão
+              Já tenho conta — Fazer login
             </Link>
-            <CheckoutButton className="block w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white py-3.5 rounded-xl font-semibold text-center text-sm transition-all">
-              Já tenho conta — Assinar R$15,90/mês
-            </CheckoutButton>
 
             {/* Guarantees */}
             <div className="flex flex-wrap justify-center gap-4 mt-6 pt-5 border-t border-white/8">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Shield size={12} className="text-accent" /> Dados criptografados</span>
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Check size={12} className="text-accent" /> Cancele quando quiser</span>
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Zap size={12} className="text-accent" /> 15 dias grátis</span>
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Zap size={12} className="text-accent" /> PIX, boleto ou cartão</span>
             </div>
           </div>
         </div>

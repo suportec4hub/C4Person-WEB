@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { TrialBanner } from "@/components/TrialBanner";
 import { PomodoroTimer } from "@/components/PomodoroTimer";
 import { SearchModal } from "@/components/SearchModal";
 import { ToastProvider } from "@/components/Toast";
@@ -13,11 +12,9 @@ import { PWAInstallBanner } from "@/components/PWAInstallBanner";
 interface Props {
   children: React.ReactNode;
   isAdmin: boolean;
-  showTrialBanner: boolean;
-  trialEnd: string | null;
 }
 
-export function DashboardShell({ children, isAdmin, showTrialBanner, trialEnd }: Props) {
+export function DashboardShell({ children, isAdmin }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -31,8 +28,6 @@ export function DashboardShell({ children, isAdmin, showTrialBanner, trialEnd }:
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const parsedTrialEnd = trialEnd ? new Date(trialEnd) : null;
-
   return (
     <ToastProvider>
       {/* h-dvh: 100dvh accounts for iOS browser chrome disappearing on scroll */}
@@ -40,7 +35,6 @@ export function DashboardShell({ children, isAdmin, showTrialBanner, trialEnd }:
         <Sidebar isAdmin={isAdmin} />
         {/* pt-safe: pushes content below the Dynamic Island / status bar on iOS */}
         <div className="flex-1 flex flex-col overflow-hidden pt-safe">
-          {showTrialBanner && parsedTrialEnd && <TrialBanner trialEnd={parsedTrialEnd} />}
           {children}
         </div>
         <PomodoroTimer />

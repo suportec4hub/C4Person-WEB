@@ -1,16 +1,9 @@
 export const dynamic = "force-dynamic";
-import { CheckCircle2, Lock, Zap, ArrowRight, Clock } from "lucide-react";
+import { CheckCircle2, Lock, Zap, ArrowRight } from "lucide-react";
 import { CheckoutButton } from "@/components/CheckoutButton";
 import Link from "next/link";
 
-export default async function AssinarPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ expired?: string }>;
-}) {
-  const { expired } = await searchParams;
-  const isExpired = expired === "true";
-
+export default async function AssinarPage() {
   return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 relative overflow-hidden">
       <div className="fixed top-0 left-[20%] w-[600px] h-[600px] bg-primary/8 rounded-full blur-[140px] pointer-events-none -z-0" />
@@ -27,21 +20,14 @@ export default async function AssinarPage({
         <div className="bg-card border border-primary/20 rounded-3xl p-8 shadow-[0_0_80px_rgba(139,92,246,0.1)] relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-purple-300 rounded-t-3xl" />
 
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5 ${
-            isExpired ? "bg-amber-500/10 border border-amber-500/20" : "bg-primary/10 border border-primary/20"
-          }`}>
-            {isExpired
-              ? <Clock size={28} className="text-amber-400" />
-              : <Lock size={28} className="text-primary" />}
+          <div className="w-16 h-16 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-5">
+            <Lock size={28} className="text-primary" />
           </div>
 
-          <h1 className="text-2xl font-black text-white mb-2">
-            {isExpired ? "Período de Teste Encerrado" : "Acesso Restrito"}
-          </h1>
+          <h1 className="text-2xl font-black text-white mb-2">Acesso Restrito</h1>
           <p className="text-muted-foreground text-sm leading-relaxed mb-6">
-            {isExpired
-              ? "Seus 15 dias de acesso gratuito expiraram. Assine agora para continuar usando o C4 Person e não perder seu progresso."
-              : "Para acessar o C4 Person você precisa de uma assinatura ativa. Assine agora e tenha acesso imediato a todas as funcionalidades."}
+            Para acessar o C4 Person você precisa de uma assinatura ativa.
+            Assine agora e tenha acesso imediato a todas as funcionalidades.
           </p>
 
           <div className="flex items-end gap-2 justify-center mb-6">
@@ -68,12 +54,10 @@ export default async function AssinarPage({
             Assinar agora <ArrowRight size={17} />
           </CheckoutButton>
 
-          {!isExpired && (
-            <p className="mt-4 text-xs text-muted-foreground">
-              <CheckCircle2 size={12} className="inline mr-1 text-emerald-400" />
-              15 dias grátis para novos usuários
-            </p>
-          )}
+          <p className="mt-4 text-xs text-muted-foreground">
+            <CheckCircle2 size={12} className="inline mr-1 text-emerald-400" />
+            Cancele quando quiser · Sem multa
+          </p>
         </div>
 
         <Link

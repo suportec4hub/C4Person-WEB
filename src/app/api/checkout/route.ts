@@ -4,10 +4,9 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
-const API = "https://api.abacatepay.com/v1";
-
-// Link de pagamento criado no dashboard do AbacatePay
-const CHECKOUT_URL = "https://app.abacatepay.com/pay/bill_S54ZPCfzmMqTHjCJuqRuTZ2m";
+// Use sandbox URL for testing: https://sandbox.asaas.com/api/v3
+const ASAAS_API = process.env.ASAAS_API_URL ?? "https://api.asaas.com/v3";
+const PLAN_VALUE = 15.90;
 
 const supabaseAdmin = (() => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,40 +15,91 @@ const supabaseAdmin = (() => {
   return createClient(url, key);
 })();
 
-async function tryEnsureCustomer(email: string, name?: string): Promise<string | null> {
-  try {
-    const listRes = await fetch(`${API}/customers/list`, {
-      headers: { Authorization: `Bearer ${process.env.ABACATEPAY_API_KEY}` },
-    });
-    const listText = await listRes.text();
-    console.log(`[AbacatePay] GET /customers/list → ${listRes.status}: ${listText.slice(0, 300)}`);
+function asaasHeaders() {
+  return {
+    access_token: process.env.ASAAS_API_KEY!,
+    "Content-Type": "application/json",
+    "User-Agent": "C4Person/1.0",
+  };
+}
 
-    if (listRes.ok) {
-      const list = JSON.parse(listText);
-      const customers = Array.isArray(list.data) ? list.data : [];
-      const found = customers.find(
-        (c: { email?: string; id?: string }) => c.email === email
-      );
-      if (found?.id) return found.id;
+async function findOrCreateCustomer(email: string, name: string, userId: string): Promise<string | null> {
+  try {
+    // Search by email first
+    const searchRes = await fetch(
+      `${ASAAS_API}/customers?email=${encodeURIComponent(email)}&limit=1`,
+      { headers: asaasHeaders() }
+    );
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      const existing = searchData.data?.[0];
+      if (existing?.id) {
+        console.log(`[ASAAS] Customer found: ${existing.id}`);
+        return existing.id;
+      }
     }
 
-    // Cria cliente
-    const createRes = await fetch(`${API}/customers/create`, {
+    // Create new customer
+    const createRes = await fetch(`${ASAAS_API}/customers`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.ABACATEPAY_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, name }),
+      headers: asaasHeaders(),
+      body: JSON.stringify({ name, email, externalReference: userId }),
     });
-    const createText = await createRes.text();
-    console.log(`[AbacatePay] POST /customers/create → ${createRes.status}: ${createText.slice(0, 300)}`);
-
-    const created = JSON.parse(createText);
-    const id = (created.data as { id?: string } | null)?.id;
-    return id ?? null;
+    const customer = await createRes.json();
+    if (customer.id) {
+      console.log(`[ASAAS] Customer created: ${customer.id}`);
+      return customer.id;
+    }
+    console.error("[ASAAS] Customer creation failed:", JSON.stringify(customer).slice(0, 300));
+    return null;
   } catch (err) {
-    console.error("[AbacatePay] tryEnsureCustomer falhou (non-blocking):", err);
+    console.error("[ASAAS] findOrCreateCustomer error:", err);
+    return null;
+  }
+}
+
+async function createSubscriptionAndGetPaymentUrl(customerId: string, userId: string): Promise<string | null> {
+  try {
+    // nextDueDate: tomorrow in YYYY-MM-DD
+    const tomorrow = new Date(Date.now() + 86_400_000);
+    const nextDueDate = tomorrow.toISOString().split("T")[0];
+
+    const subRes = await fetch(`${ASAAS_API}/subscriptions`, {
+      method: "POST",
+      headers: asaasHeaders(),
+      body: JSON.stringify({
+        customer: customerId,
+        billingType: "UNDEFINED", // user chooses PIX/boleto/credit card on payment page
+        value: PLAN_VALUE,
+        nextDueDate,
+        cycle: "MONTHLY",
+        description: "C4Person Pro — Acesso completo",
+        externalReference: userId,
+      }),
+    });
+    const sub = await subRes.json();
+    if (!sub.id) {
+      console.error("[ASAAS] Subscription creation failed:", JSON.stringify(sub).slice(0, 300));
+      return null;
+    }
+    console.log(`[ASAAS] Subscription created: ${sub.id}`);
+
+    // Get first payment to obtain the invoiceUrl
+    const paymentsRes = await fetch(
+      `${ASAAS_API}/payments?subscription=${sub.id}&limit=1`,
+      { headers: asaasHeaders() }
+    );
+    const payments = await paymentsRes.json();
+    const invoiceUrl: string | undefined = payments.data?.[0]?.invoiceUrl;
+    if (invoiceUrl) {
+      console.log(`[ASAAS] Invoice URL: ${invoiceUrl}`);
+      return invoiceUrl;
+    }
+
+    console.error("[ASAAS] No invoice URL in payments:", JSON.stringify(payments).slice(0, 300));
+    return null;
+  } catch (err) {
+    console.error("[ASAAS] createSubscriptionAndGetPaymentUrl error:", err);
     return null;
   }
 }
@@ -80,43 +130,38 @@ export async function POST(req: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    // Tenta criar/encontrar cliente no AbacatePay (não bloqueia se falhar)
-    const customerId = await tryEnsureCustomer(
-      user.email!,
-      profile?.full_name ?? undefined
-    );
+    const name = profile?.full_name ?? user.email ?? "Cliente";
 
-    // Persiste o mapeamento para o webhook usar no lookup
-    const { data: existingSub } = await supabaseAdmin
-      .from("subscriptions")
-      .select("status")
-      .eq("user_id", user.id)
-      .single();
+    const customerId = await findOrCreateCustomer(user.email!, name, user.id);
 
-    if (existingSub) {
-      await supabaseAdmin
-        .from("subscriptions")
-        .update({
-          ...(customerId ? { abacatepay_customer_id: customerId } : {}),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", user.id);
-    } else {
-      await supabaseAdmin.from("subscriptions").insert({
+    // Upsert subscription row as pending (webhook will activate it)
+    await supabaseAdmin.from("subscriptions").upsert(
+      {
         user_id: user.id,
-        ...(customerId ? { abacatepay_customer_id: customerId } : {}),
         status: "pending",
         plan: "pro",
+        ...(customerId ? { abacatepay_customer_id: customerId } : {}),
         updated_at: new Date().toISOString(),
-      });
-    }
-
-    console.log(
-      `[Checkout] user=${user.id} email=${user.email} customer=${customerId ?? "n/a"} → ${CHECKOUT_URL}`
+      },
+      { onConflict: "user_id" }
     );
 
-    // Sempre retorna a URL — o mapeamento customer é best-effort
-    return NextResponse.json({ url: CHECKOUT_URL });
+    if (!customerId) {
+      return NextResponse.json(
+        { error: "Não foi possível criar o cliente no ASAAS. Verifique a ASAAS_API_KEY." },
+        { status: 502 }
+      );
+    }
+
+    const paymentUrl = await createSubscriptionAndGetPaymentUrl(customerId, user.id);
+    if (!paymentUrl) {
+      return NextResponse.json(
+        { error: "Não foi possível gerar o link de pagamento. Tente novamente." },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ url: paymentUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[Checkout] Erro crítico:", message);

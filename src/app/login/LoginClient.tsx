@@ -51,10 +51,9 @@ export default function LoginClient() {
             id: data.user.id,
             full_name: fullName.trim(),
             birth_date: birthDate || null,
-            trial_ends_at: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
           });
         }
-        setSuccessMsg("Conta criada! Verifique seu e-mail para confirmar. Você tem 15 dias de acesso gratuito.");
+        setSuccessMsg("Conta criada! Verifique seu e-mail para confirmar o cadastro.");
       }
     } catch (err: unknown) {
       const msg = (err instanceof Error ? err.message : "Erro inesperado.").toLowerCase();
