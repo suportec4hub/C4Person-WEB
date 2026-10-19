@@ -39,6 +39,13 @@ export async function POST(req: NextRequest) {
       context,
     }: { message: string; history: ChatMessage[]; context: ChatContext } = await req.json();
 
+    if (!message || typeof message !== "string" || message.length > 4000) {
+      return NextResponse.json({ error: "Mensagem inválida." }, { status: 400 });
+    }
+    if (!Array.isArray(history) || history.length > 50) {
+      return NextResponse.json({ error: "Histórico inválido." }, { status: 400 });
+    }
+
     const today = new Date().toLocaleDateString("pt-BR", {
       weekday: "long",
       day: "numeric",

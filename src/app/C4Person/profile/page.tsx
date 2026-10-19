@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "framer-motion";
 import { UserCircle, Mail, Calendar, Shield, Edit2, Check, X, LogOut, CreditCard } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { DeleteAccountButton } from "@/components/DeleteAccountButton";
 
 interface Profile {
   id: string;
@@ -301,6 +302,13 @@ export default function ProfilePage() {
             <LogOut size={16} />
             Sair da conta
           </button>
+        </motion.div>
+
+        {/* LGPD — account deletion */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+        >
+          <DeleteAccountButton />
         </motion.div>
 
       </div>
