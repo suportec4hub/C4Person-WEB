@@ -24,17 +24,27 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Accept Android SDK licenses
+      - name: Verify Android SDK
         run: |
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls $ANDROID_HOME/cmdline-tools/ || echo "cmdline-tools not found"
+          ls $ANDROID_HOME/build-tools/ || echo "build-tools not found at default"
+
+      - name: Accept SDK licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || \
+          yes | $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager --licenses 2>/dev/null || \
+          true
 
       - name: Install SDK components
         run: |
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
-            "build-tools;34.0.0" \
-            "platforms;android-34"
+          SDK_MGR=$(find $ANDROID_HOME/cmdline-tools -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -n "$SDK_MGR" ]; then
+            "$SDK_MGR" "build-tools;34.0.0" "platforms;android-34"
+          else
+            echo "sdkmanager not found, skipping"
+          fi
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -43,10 +53,7 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        env:
-          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-          ANDROID_HOME: /usr/local/lib/android/sdk
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Print signing fingerprint
         working-directory: android
