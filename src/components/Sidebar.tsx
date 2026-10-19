@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield, UserCircle, CalendarDays, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Target, Wallet, PenTool, LogOut, Shield, UserCircle, CalendarDays, BarChart3, LifeBuoy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
+import { SupportModal } from "@/components/SupportModal";
 
 const NAV = [
   { href: "/C4Person",          icon: LayoutDashboard, label: "Dashboard" },
@@ -24,6 +26,7 @@ interface SidebarProps {
 export function Sidebar({ isAdmin = false }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [supportOpen, setSupportOpen] = useState(false);
 
   const handleLogout = async () => {
     await supabase.auth.signOut({ scope: "local" });
@@ -32,6 +35,8 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
 
   return (
     <>
+      <SupportModal open={supportOpen} onClose={() => setSupportOpen(false)} />
+
       {/* ── Desktop sidebar (md+) ── */}
       <aside className="hidden md:flex w-16 glass border-r border-border flex-col items-center py-4 gap-0 relative z-10 flex-shrink-0 overflow-y-auto">
         {/* Logo */}
@@ -83,6 +88,13 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
         <div className="flex flex-col gap-1 items-center w-full px-2 pt-2 flex-shrink-0 text-muted-foreground">
           <NotificationBell />
           <ThemeToggle />
+          <button
+            onClick={() => setSupportOpen(true)}
+            title="Suporte"
+            className="w-full flex items-center justify-center p-2.5 rounded-xl hover:bg-white/5 hover:text-white transition-all"
+          >
+            <LifeBuoy size={20} />
+          </button>
           {isAdmin && (
             <Link
               href="/admin"
@@ -121,6 +133,13 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
             </Link>
           );
         })}
+        <button
+          onClick={() => setSupportOpen(true)}
+          className="flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl text-muted-foreground hover:text-white transition-all min-w-[38px]"
+        >
+          <LifeBuoy size={17} />
+          <span className="text-[7px] font-medium leading-none">Suporte</span>
+        </button>
         {isAdmin && (
           <Link
             href="/admin"
