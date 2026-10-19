@@ -141,6 +141,12 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
+    let bodyCpf: string | undefined;
+    try {
+      const body = await req.json();
+      if (typeof body?.cpf === "string" && body.cpf.length === 11) bodyCpf = body.cpf;
+    } catch { /* no body or invalid JSON */ }
+
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("full_name, cpf")
@@ -148,7 +154,12 @@ export async function POST(req: NextRequest) {
       .single();
 
     const name = profile?.full_name ?? user.email ?? "Cliente";
-    const cpf = profile?.cpf as string | undefined;
+    const cpf = (bodyCpf ?? (profile?.cpf as string | undefined)) || undefined;
+
+    // Persist CPF to profile if provided from client and not already stored
+    if (bodyCpf && !profile?.cpf) {
+      await supabaseAdmin.from("profiles").update({ cpf: bodyCpf }).eq("id", user.id);
+    }
 
     const customerResult = await findOrCreateCustomer(user.email!, name, user.id, cpf);
 

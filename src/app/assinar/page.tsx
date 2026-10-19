@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
-import { CheckCircle2, Lock, Zap, ArrowRight } from "lucide-react";
+import { Lock, Zap, ArrowRight, CheckCircle2 } from "lucide-react";
 import { CheckoutButton } from "@/components/CheckoutButton";
-import Link from "next/link";
+import { AssinarActions } from "./AssinarActions";
 
 export default async function AssinarPage() {
   return (
@@ -50,9 +50,8 @@ export default async function AssinarPage() {
             ))}
           </div>
 
-          <CheckoutButton className="w-full bg-primary hover:bg-primary/90 text-white py-3.5 rounded-xl font-semibold transition-all shadow-[0_4px_20px_rgba(139,92,246,0.3)] flex items-center justify-center gap-2">
-            Assinar agora <ArrowRight size={17} />
-          </CheckoutButton>
+          {/* AssinarActions handles CPF collection + checkout */}
+          <AssinarActions />
 
           <p className="mt-4 text-xs text-muted-foreground">
             <CheckCircle2 size={12} className="inline mr-1 text-emerald-400" />
@@ -60,12 +59,7 @@ export default async function AssinarPage() {
           </p>
         </div>
 
-        <Link
-          href="/login"
-          className="mt-5 inline-block text-xs text-muted-foreground hover:text-white transition-colors"
-        >
-          Entrar com outra conta
-        </Link>
+        <AssinarActions.SignOut />
       </div>
     </div>
   );
