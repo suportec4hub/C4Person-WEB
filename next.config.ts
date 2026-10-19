@@ -17,6 +17,7 @@ const securityHeaders = [
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://*.supabase.co",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.groq.com https://api.asaas.com https://sandbox.asaas.com https://brapi.dev https://newsapi.org",
+      "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
       "media-src 'self' blob:",
       "worker-src 'self' blob:",
       "frame-ancestors 'none'",
