@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic";
-import { Lock, Zap, ArrowRight, CheckCircle2 } from "lucide-react";
-import { CheckoutButton } from "@/components/CheckoutButton";
-import { AssinarActions } from "./AssinarActions";
+import { Lock, Zap, CheckCircle2 } from "lucide-react";
+import { AssinarActions, AssinarSignOut } from "./AssinarActions";
 
 export default async function AssinarPage() {
   return (
@@ -50,7 +49,6 @@ export default async function AssinarPage() {
             ))}
           </div>
 
-          {/* AssinarActions handles CPF collection + checkout */}
           <AssinarActions />
 
           <p className="mt-4 text-xs text-muted-foreground">
@@ -59,7 +57,7 @@ export default async function AssinarPage() {
           </p>
         </div>
 
-        <AssinarActions.SignOut />
+        <AssinarSignOut />
       </div>
     </div>
   );

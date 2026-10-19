@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, ArrowRight, CreditCard, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-function SignOut() {
+export function AssinarSignOut() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -111,5 +111,3 @@ export function AssinarActions() {
     </div>
   );
 }
-
-AssinarActions.SignOut = SignOut;
