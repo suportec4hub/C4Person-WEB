@@ -23,20 +23,25 @@ function asaasHeaders() {
   };
 }
 
-async function findOrCreateCustomer(email: string, name: string, userId: string): Promise<string | null> {
+async function findOrCreateCustomer(email: string, name: string, userId: string): Promise<{ id: string } | { error: string }> {
   try {
     // Search by email first
     const searchRes = await fetch(
       `${ASAAS_API}/customers?email=${encodeURIComponent(email)}&limit=1`,
       { headers: asaasHeaders() }
     );
-    if (searchRes.ok) {
-      const searchData = await searchRes.json();
-      const existing = searchData.data?.[0];
-      if (existing?.id) {
-        console.log(`[ASAAS] Customer found: ${existing.id}`);
-        return existing.id;
-      }
+    const searchText = await searchRes.text();
+    console.log(`[ASAAS] GET /customers → ${searchRes.status}: ${searchText.slice(0, 400)}`);
+
+    if (!searchRes.ok) {
+      return { error: `ASAAS ${searchRes.status}: ${searchText.slice(0, 200)}` };
+    }
+
+    const searchData = JSON.parse(searchText);
+    const existing = searchData.data?.[0];
+    if (existing?.id) {
+      console.log(`[ASAAS] Customer found: ${existing.id}`);
+      return { id: existing.id };
     }
 
     // Create new customer
@@ -45,16 +50,23 @@ async function findOrCreateCustomer(email: string, name: string, userId: string)
       headers: asaasHeaders(),
       body: JSON.stringify({ name, email, externalReference: userId }),
     });
-    const customer = await createRes.json();
+    const createText = await createRes.text();
+    console.log(`[ASAAS] POST /customers → ${createRes.status}: ${createText.slice(0, 400)}`);
+
+    if (!createRes.ok) {
+      return { error: `ASAAS ${createRes.status}: ${createText.slice(0, 200)}` };
+    }
+
+    const customer = JSON.parse(createText);
     if (customer.id) {
       console.log(`[ASAAS] Customer created: ${customer.id}`);
-      return customer.id;
+      return { id: customer.id };
     }
-    console.error("[ASAAS] Customer creation failed:", JSON.stringify(customer).slice(0, 300));
-    return null;
+    return { error: `ASAAS retornou sem id: ${createText.slice(0, 200)}` };
   } catch (err) {
-    console.error("[ASAAS] findOrCreateCustomer error:", err);
-    return null;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[ASAAS] findOrCreateCustomer error:", msg);
+    return { error: msg };
   }
 }
 
@@ -132,7 +144,17 @@ export async function POST(req: NextRequest) {
 
     const name = profile?.full_name ?? user.email ?? "Cliente";
 
-    const customerId = await findOrCreateCustomer(user.email!, name, user.id);
+    const customerResult = await findOrCreateCustomer(user.email!, name, user.id);
+
+    if ("error" in customerResult) {
+      console.error("[Checkout] ASAAS customer error:", customerResult.error);
+      return NextResponse.json(
+        { error: `Erro ao criar cliente no ASAAS: ${customerResult.error}` },
+        { status: 502 }
+      );
+    }
+
+    const customerId = customerResult.id;
 
     // Upsert subscription row as pending (webhook will activate it)
     await supabaseAdmin.from("subscriptions").upsert(
@@ -140,18 +162,11 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         status: "pending",
         plan: "pro",
-        ...(customerId ? { abacatepay_customer_id: customerId } : {}),
+        abacatepay_customer_id: customerId,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }
     );
-
-    if (!customerId) {
-      return NextResponse.json(
-        { error: "Não foi possível criar o cliente no ASAAS. Verifique a ASAAS_API_KEY." },
-        { status: 502 }
-      );
-    }
 
     const paymentUrl = await createSubscriptionAndGetPaymentUrl(customerId, user.id);
     if (!paymentUrl) {
