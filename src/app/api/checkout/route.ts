@@ -70,13 +70,11 @@ async function findOrCreateCustomer(email: string, name: string, userId: string)
   }
 }
 
-async function createChargeAndGetPaymentUrl(customerId: string, userId: string): Promise<string | null> {
+async function createChargeAndGetPaymentUrl(customerId: string, userId: string): Promise<{ url: string } | { error: string }> {
   try {
-    // dueDate: tomorrow in YYYY-MM-DD
     const tomorrow = new Date(Date.now() + 86_400_000);
     const dueDate = tomorrow.toISOString().split("T")[0];
 
-    // Single charge with UNDEFINED billing type — user chooses PIX/boleto/card on the invoice page
     const res = await fetch(`${ASAAS_API}/payments`, {
       method: "POST",
       headers: asaasHeaders(),
@@ -90,22 +88,25 @@ async function createChargeAndGetPaymentUrl(customerId: string, userId: string):
       }),
     });
     const text = await res.text();
-    console.log(`[ASAAS] POST /payments → ${res.status}: ${text.slice(0, 500)}`);
+    console.log(`[ASAAS] POST /payments → ${res.status}: ${text.slice(0, 600)}`);
 
-    if (!res.ok) return null;
-
-    const payment = JSON.parse(text);
-    const invoiceUrl: string | undefined = payment.invoiceUrl;
-    if (invoiceUrl) {
-      console.log(`[ASAAS] Invoice URL: ${invoiceUrl}`);
-      return invoiceUrl;
+    if (!res.ok) {
+      return { error: `ASAAS ${res.status}: ${text.slice(0, 300)}` };
     }
 
-    console.error("[ASAAS] No invoiceUrl in payment response:", text.slice(0, 300));
-    return null;
+    const payment = JSON.parse(text);
+    // ASAAS can return invoiceUrl directly or need it fetched
+    const invoiceUrl: string | undefined = payment.invoiceUrl ?? payment.bankSlipUrl ?? payment.paymentLink;
+    if (invoiceUrl) {
+      console.log(`[ASAAS] Payment URL: ${invoiceUrl}`);
+      return { url: invoiceUrl };
+    }
+
+    return { error: `ASAAS retornou sem URL de pagamento. Response: ${text.slice(0, 300)}` };
   } catch (err) {
-    console.error("[ASAAS] createChargeAndGetPaymentUrl error:", err);
-    return null;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[ASAAS] createChargeAndGetPaymentUrl error:", msg);
+    return { error: msg };
   }
 }
 
@@ -161,15 +162,13 @@ export async function POST(req: NextRequest) {
       { onConflict: "user_id" }
     );
 
-    const paymentUrl = await createChargeAndGetPaymentUrl(customerId, user.id);
-    if (!paymentUrl) {
-      return NextResponse.json(
-        { error: "Não foi possível gerar o link de pagamento. Tente novamente." },
-        { status: 502 }
-      );
+    const chargeResult = await createChargeAndGetPaymentUrl(customerId, user.id);
+    if ("error" in chargeResult) {
+      console.error("[Checkout] Charge error:", chargeResult.error);
+      return NextResponse.json({ error: chargeResult.error }, { status: 502 });
     }
 
-    return NextResponse.json({ url: paymentUrl });
+    return NextResponse.json({ url: chargeResult.url });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[Checkout] Erro crítico:", message);
