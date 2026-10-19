@@ -8,6 +8,7 @@ import { ToastProvider } from "@/components/Toast";
 import { KeyboardHelpModal } from "@/components/KeyboardHelpModal";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { PWAInstallBanner } from "@/components/PWAInstallBanner";
+import { TrackingProvider } from "@/components/TrackingProvider";
 
 interface Props {
   children: React.ReactNode;
@@ -42,6 +43,7 @@ export function DashboardShell({ children, isAdmin }: Props) {
         <KeyboardHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
         <OnboardingTour />
         <PWAInstallBanner />
+        <TrackingProvider />
       </div>
     </ToastProvider>
   );
