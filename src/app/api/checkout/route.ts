@@ -70,48 +70,41 @@ async function findOrCreateCustomer(email: string, name: string, userId: string)
   }
 }
 
-async function createSubscriptionAndGetPaymentUrl(customerId: string, userId: string): Promise<string | null> {
+async function createChargeAndGetPaymentUrl(customerId: string, userId: string): Promise<string | null> {
   try {
-    // nextDueDate: tomorrow in YYYY-MM-DD
+    // dueDate: tomorrow in YYYY-MM-DD
     const tomorrow = new Date(Date.now() + 86_400_000);
-    const nextDueDate = tomorrow.toISOString().split("T")[0];
+    const dueDate = tomorrow.toISOString().split("T")[0];
 
-    const subRes = await fetch(`${ASAAS_API}/subscriptions`, {
+    // Single charge with UNDEFINED billing type — user chooses PIX/boleto/card on the invoice page
+    const res = await fetch(`${ASAAS_API}/payments`, {
       method: "POST",
       headers: asaasHeaders(),
       body: JSON.stringify({
         customer: customerId,
-        billingType: "UNDEFINED", // user chooses PIX/boleto/credit card on payment page
+        billingType: "UNDEFINED",
         value: PLAN_VALUE,
-        nextDueDate,
-        cycle: "MONTHLY",
-        description: "C4Person Pro — Acesso completo",
+        dueDate,
+        description: "C4Person Pro — Assinatura mensal",
         externalReference: userId,
       }),
     });
-    const sub = await subRes.json();
-    if (!sub.id) {
-      console.error("[ASAAS] Subscription creation failed:", JSON.stringify(sub).slice(0, 300));
-      return null;
-    }
-    console.log(`[ASAAS] Subscription created: ${sub.id}`);
+    const text = await res.text();
+    console.log(`[ASAAS] POST /payments → ${res.status}: ${text.slice(0, 500)}`);
 
-    // Get first payment to obtain the invoiceUrl
-    const paymentsRes = await fetch(
-      `${ASAAS_API}/payments?subscription=${sub.id}&limit=1`,
-      { headers: asaasHeaders() }
-    );
-    const payments = await paymentsRes.json();
-    const invoiceUrl: string | undefined = payments.data?.[0]?.invoiceUrl;
+    if (!res.ok) return null;
+
+    const payment = JSON.parse(text);
+    const invoiceUrl: string | undefined = payment.invoiceUrl;
     if (invoiceUrl) {
       console.log(`[ASAAS] Invoice URL: ${invoiceUrl}`);
       return invoiceUrl;
     }
 
-    console.error("[ASAAS] No invoice URL in payments:", JSON.stringify(payments).slice(0, 300));
+    console.error("[ASAAS] No invoiceUrl in payment response:", text.slice(0, 300));
     return null;
   } catch (err) {
-    console.error("[ASAAS] createSubscriptionAndGetPaymentUrl error:", err);
+    console.error("[ASAAS] createChargeAndGetPaymentUrl error:", err);
     return null;
   }
 }
@@ -168,7 +161,7 @@ export async function POST(req: NextRequest) {
       { onConflict: "user_id" }
     );
 
-    const paymentUrl = await createSubscriptionAndGetPaymentUrl(customerId, user.id);
+    const paymentUrl = await createChargeAndGetPaymentUrl(customerId, user.id);
     if (!paymentUrl) {
       return NextResponse.json(
         { error: "Não foi possível gerar o link de pagamento. Tente novamente." },
