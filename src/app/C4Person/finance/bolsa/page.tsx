@@ -378,11 +378,12 @@ function LivePlayer() {
   const [open, setOpen] = useState(true);
   const [videoId, setVideoId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [embedBlocked, setEmbedBlocked] = useState(false);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadVideoId = useCallback(async (silent = false) => {
     // silent=true: periodic background refresh — keeps the iframe mounted so playback continues
-    if (!silent) setStatus("loading");
+    if (!silent) { setStatus("loading"); setEmbedBlocked(false); }
     try {
       const res  = await fetch("/api/cnn-live");
       const json = await res.json();
@@ -407,8 +408,21 @@ function LivePlayer() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Detect YouTube iframe API errors via postMessage (code 100/101/150 = embedding blocked)
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+        if (data?.event === "onError") setEmbedBlocked(true);
+      } catch { /* ignore non-JSON messages */ }
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [videoId]);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://c4person.com.br";
   const embedSrc = videoId
-    ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1`
+    ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1&origin=${encodeURIComponent(origin)}`
     : null;
 
   return (
@@ -459,7 +473,7 @@ function LivePlayer() {
             </div>
           )}
 
-          {status === "ok" && embedSrc && (
+          {status === "ok" && embedSrc && !embedBlocked && (
             <div className="aspect-video bg-black">
               <iframe
                 key={videoId}
@@ -469,6 +483,26 @@ function LivePlayer() {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
               />
+            </div>
+          )}
+
+          {status === "ok" && embedBlocked && (
+            <div className="aspect-video bg-black flex flex-col items-center justify-center gap-4 px-6 text-center">
+              <Tv size={28} className="text-red-400/60" />
+              <div>
+                <p className="text-sm font-semibold text-white/70">Embed bloqueado pelo YouTube</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Este stream não permite exibição incorporada.<br />Assista diretamente no YouTube.
+                </p>
+              </div>
+              <a
+                href={`https://www.youtube.com/watch?v=${videoId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 text-xs px-5 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 hover:text-red-300 transition-colors border border-red-500/30 font-semibold"
+              >
+                <Tv size={13} /> Abrir ao vivo no YouTube
+              </a>
             </div>
           )}
 
