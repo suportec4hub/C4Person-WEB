@@ -965,7 +965,7 @@ export default function Dashboard() {
               <h2 className="text-muted-foreground text-xs md:text-sm font-medium mb-1 uppercase tracking-wider">
                 {format(today, "EEEE, d 'de' MMMM", { locale: ptBR })}
               </h2>
-              <h1 className="text-2xl md:text-4xl font-bold tracking-tight">{getGreeting()}{firstName ? `, ${firstName}` : ""}</h1>
+              <h1 className="text-2xl md:text-4xl font-bold tracking-tight">{getGreeting()}{firstName ? <>, <span className="text-gradient">{firstName}</span></> : ""}</h1>
             </div>
             {(tasks.length > 0 || habits.length > 0) && (() => {
               const total = tasks.length + habits.length;
@@ -1018,7 +1018,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {/* Tarefas */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-            className="glass-card p-4 flex items-center gap-3 hover:border-primary/30 transition-colors">
+            className="glass-card stat-tile p-4 flex items-center gap-3 hover:border-primary/30 transition-colors">
             <div className="relative w-11 h-11 shrink-0">
               <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
                 <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
@@ -1040,7 +1040,7 @@ export default function Dashboard() {
           </motion.div>
           {/* Hábitos */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-            className="glass-card p-4 flex items-center gap-3 hover:border-orange-500/30 transition-colors">
+            className="glass-card stat-tile p-4 flex items-center gap-3 hover:border-orange-500/30 transition-colors">
             <div className="relative w-11 h-11 shrink-0">
               <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
                 <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
@@ -1062,7 +1062,7 @@ export default function Dashboard() {
           </motion.div>
           {/* Sequência */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-            className="glass-card p-4 flex items-center gap-3 hover:border-yellow-500/30 transition-colors">
+            className="glass-card stat-tile p-4 flex items-center gap-3 hover:border-yellow-500/30 transition-colors">
             <div className="relative w-11 h-11 shrink-0">
               <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
                 <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
@@ -1084,7 +1084,7 @@ export default function Dashboard() {
           </motion.div>
           {/* Saldo do mês */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-            className={`glass-card p-4 flex items-center gap-3 transition-colors ${monthBalance >= 0 ? 'hover:border-emerald-500/30' : 'hover:border-red-500/30'}`}>
+            className={`glass-card stat-tile p-4 flex items-center gap-3 transition-colors ${monthBalance >= 0 ? 'hover:border-emerald-500/30' : 'hover:border-red-500/30'}`}>
             <div className="relative w-11 h-11 shrink-0">
               <svg viewBox="0 0 36 36" className="w-11 h-11 -rotate-90">
                 <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
@@ -1098,7 +1098,7 @@ export default function Dashboard() {
             </div>
             <div className="min-w-0">
               <p className="text-xs text-muted-foreground mb-0.5">Este Mês</p>
-              <p className={`text-base font-bold leading-none truncate ${monthBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              <p className={`text-base font-bold leading-none truncate ${monthBalance >= 0 ? 'text-gradient-green' : 'text-red-400'}`}>
                 {formatCurrency(monthBalance)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">{savingsRate}% de poupança</p>
@@ -1231,13 +1231,13 @@ export default function Dashboard() {
                   habits.map((habit) => (
                     <div key={habit.id} onClick={() => toggleHabit(habit.id, habit.is_completed_today, habit.streak)} className="flex items-center justify-between group cursor-pointer">
                       <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${habit.is_completed_today ? 'bg-accent/20 text-accent border border-accent/30' : 'bg-secondary text-muted-foreground border border-white/5 group-hover:border-white/20'}`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${habit.is_completed_today ? 'bg-accent/20 text-accent border border-accent/30 habit-done-anim shadow-glow-accent' : 'bg-secondary text-muted-foreground border border-white/5 group-hover:border-white/20'}`}>
                           {habit.is_completed_today && <CheckCircle2 size={16} />}
                         </div>
                         <span className={habit.is_completed_today ? 'text-white/80' : 'text-white'}>{habit.name}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 text-xs font-medium text-orange-400">
+                        <div className={`flex items-center gap-1 text-xs font-medium text-orange-400 ${(habit.streak||0) >= 30 ? 'streak-legend' : (habit.streak||0) >= 14 ? 'streak-high' : (habit.streak||0) >= 7 ? 'streak-mid' : (habit.streak||0) >= 3 ? 'streak-low' : ''}`}>
                           <Flame size={12} /> {habit.streak}
                         </div>
                         <button onClick={(e) => { e.stopPropagation(); deleteHabit(habit.id); }} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-0.5">

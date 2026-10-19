@@ -75,7 +75,7 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
               title={label}
               className={`w-full flex items-center justify-center p-2.5 rounded-xl transition-all ${
                 pathname === href
-                  ? "bg-white/5 text-primary"
+                  ? "nav-item-active"
                   : "hover:bg-white/5 hover:text-white"
               }`}
             >
@@ -125,7 +125,7 @@ export function Sidebar({ isAdmin = false }: SidebarProps) {
               key={href}
               href={href}
               className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl transition-all min-w-[38px] ${
-                active ? "text-primary" : "text-muted-foreground"
+                active ? "text-primary drop-shadow-[0_0_6px_rgba(139,92,246,0.6)]" : "text-muted-foreground"
               }`}
             >
               <Icon size={17} />
