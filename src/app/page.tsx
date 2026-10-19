@@ -5,6 +5,7 @@ import {
   BarChart3, Quote, Layers,
 } from "lucide-react";
 import { CheckoutButton } from "@/components/CheckoutButton";
+import { LogoMark } from "@/components/LogoMark";
 
 /* ── tiny helpers ── */
 const Rating = () => (
@@ -139,9 +140,7 @@ export default function LandingPage() {
       {/* ── HEADER ── */}
       <header className="relative z-40 flex items-center justify-between px-6 md:px-10 py-4 border-b border-white/5 bg-background/80 backdrop-blur-md sticky top-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-white font-black text-sm shadow-[0_0_18px_rgba(139,92,246,0.5)]">
-            C4
-          </div>
+          <LogoMark size={36} className="drop-shadow-[0_0_12px_rgba(124,58,237,0.55)]" />
           <span className="font-bold text-white text-lg tracking-tight">C4Person</span>
         </div>
         <nav className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
@@ -252,7 +251,7 @@ export default function LandingPage() {
             <div className="flex gap-4">
               {/* Sidebar */}
               <div className="w-12 bg-background/60 rounded-2xl flex flex-col items-center py-4 gap-3">
-                <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center text-white font-black text-[10px]">C4</div>
+                <LogoMark size={32} />
                 {[CheckCircle2, Target, Wallet, Mic, BarChart3].map((Icon, i) => (
                   <div key={i} className={`w-8 h-8 rounded-xl flex items-center justify-center ${i === 0 ? "bg-primary/20 text-primary" : "bg-white/5 text-muted-foreground"}`}>
                     <Icon size={14} />
