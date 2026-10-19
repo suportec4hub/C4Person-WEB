@@ -128,10 +128,10 @@ export default function LandingPage() {
       {/* ── Announcement bar ── */}
       <div className="relative z-50 bg-primary/10 border-b border-primary/20 py-2.5 px-4 text-center">
         <p className="text-sm text-primary font-medium">
-          <span className="font-bold">🎁 15 dias completamente grátis</span>
-          {" "}— sem cartão de crédito.{" "}
+          <span className="font-bold">⚡ Acesso completo a partir de R$15,90/mês</span>
+          {" "}— PIX, boleto ou cartão.{" "}
           <Link href="/login" className="underline underline-offset-2 hover:text-purple-300 transition-colors">
-            Começar agora →
+            Assinar agora →
           </Link>
         </p>
       </div>
@@ -157,7 +157,7 @@ export default function LandingPage() {
             href="/login"
             className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-5 py-2 rounded-full text-sm font-semibold shadow-[0_2px_20px_rgba(139,92,246,0.35)] transition-all hover:scale-105"
           >
-            Grátis por 15 dias <ArrowRight size={14} />
+            Assinar agora <ArrowRight size={14} />
           </Link>
         </div>
       </header>
@@ -193,7 +193,7 @@ export default function LandingPage() {
             href="/login"
             className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-full font-bold text-base shadow-[0_6px_40px_rgba(139,92,246,0.45)] transition-all hover:scale-105 hover:shadow-[0_8px_50px_rgba(139,92,246,0.55)]"
           >
-            Começar 15 dias grátis <ArrowRight size={18} />
+            Começar agora <ArrowRight size={18} />
           </Link>
           <a
             href="#features"
@@ -205,9 +205,9 @@ export default function LandingPage() {
 
         {/* Trust badges */}
         <div className="flex flex-wrap justify-center items-center gap-x-5 gap-y-2 text-xs text-muted-foreground mb-12">
-          <span className="flex items-center gap-1.5"><Check size={13} className="text-accent" /> Sem cartão de crédito</span>
+          <span className="flex items-center gap-1.5"><Check size={13} className="text-accent" /> PIX, boleto ou cartão</span>
           <span className="flex items-center gap-1.5"><Check size={13} className="text-accent" /> Cancele quando quiser</span>
-          <span className="flex items-center gap-1.5"><Check size={13} className="text-accent" /> 15 dias completamente grátis</span>
+          <span className="flex items-center gap-1.5"><Check size={13} className="text-accent" /> Ativação imediata</span>
           <span className="flex items-center gap-1.5"><Smartphone size={13} className="text-accent" /> Funciona no iPhone e Android</span>
         </div>
 
@@ -512,7 +512,7 @@ export default function LandingPage() {
             {
               step: "01", icon: Lock, color: "text-primary", bg: "bg-primary/10 border-primary/20",
               title: "Crie sua conta em 30s",
-              desc: "E-mail e senha. Sem formulário longo, sem cartão. Você já entra com 15 dias de acesso total.",
+              desc: "E-mail e senha. Sem formulário longo. Assine e tenha acesso total imediatamente.",
             },
             {
               step: "02", icon: Zap, color: "text-amber-400", bg: "bg-amber-400/10 border-amber-400/20",
@@ -655,7 +655,7 @@ export default function LandingPage() {
           </h2>
 
           <p className="text-muted-foreground mb-8 text-lg leading-relaxed max-w-lg mx-auto">
-            15 dias completamente grátis. Sem cartão de crédito. Se não mudar nada na sua rotina, você não paga nada.
+            R$15,90/mês. Sem surpresas na fatura. Cancele quando quiser — sem multa, sem burocracia.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
@@ -663,14 +663,14 @@ export default function LandingPage() {
               href="/login"
               className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-10 py-4 rounded-full font-bold text-lg shadow-[0_8px_50px_rgba(139,92,246,0.5)] transition-all hover:scale-105"
             >
-              Começar grátis agora <ArrowRight size={20} />
+              Assinar agora — R$15,90/mês <ArrowRight size={20} />
             </Link>
           </div>
 
           {/* Final trust */}
           <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><Check size={12} className="text-accent" />Sem cartão de crédito</span>
-            <span className="flex items-center gap-1.5"><Check size={12} className="text-accent" />15 dias grátis</span>
+            <span className="flex items-center gap-1.5"><Check size={12} className="text-accent" />PIX, boleto ou cartão</span>
+            <span className="flex items-center gap-1.5"><Check size={12} className="text-accent" />Ativação imediata</span>
             <span className="flex items-center gap-1.5"><Check size={12} className="text-accent" />Cancele a qualquer momento</span>
             <span className="flex items-center gap-1.5"><Shield size={12} className="text-accent" />Dados 100% seguros</span>
           </div>
