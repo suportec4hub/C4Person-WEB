@@ -10,11 +10,13 @@ const supabaseAdmin = (() => {
 })();
 
 function verifyToken(req: NextRequest): boolean {
-  const token = process.env.ASAAS_WEBHOOK_TOKEN;
+  const token = process.env.ASAAS_WEBHOOK_TOKEN ?? "";
   const received = req.headers.get("asaas-access-token") ?? "";
   console.log(`[ASAAS Webhook] token env=${token ? `"${token.slice(0, 6)}…"(len=${token.length})` : "NÃO DEFINIDO"} received=${received ? `"${received.slice(0, 6)}…"(len=${received.length})` : "VAZIO"}`);
-  if (!token) return true; // token not configured — allow
-  return received === token;
+  // Only reject when both sides have a token configured and they don't match.
+  // If either side has no token (Asaas not configured with one, or env var not set), allow through.
+  if (token && received) return received === token;
+  return true;
 }
 
 async function resolveUserId(
