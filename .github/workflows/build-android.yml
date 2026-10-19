@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     name: Build APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
@@ -24,14 +24,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept SDK licenses
-        run: yes | sdkmanager --licenses || true
+      - name: Accept Android SDK licenses
+        run: |
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Install SDK components
-        run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
+        run: |
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "build-tools;34.0.0" \
+            "platforms;android-34"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
@@ -40,13 +43,17 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: gradle assembleDebug --no-daemon
 
       - name: Print signing fingerprint
         working-directory: android
         run: |
-          echo "==== SHA-256 fingerprint (for assetlinks.json) ===="
-          keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk 2>/dev/null | grep -A1 "SHA256" || true
+          echo "==== SHA-256 fingerprint (copy to assetlinks.json) ===="
+          keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk 2>/dev/null \
+            | grep -i "SHA256" || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
