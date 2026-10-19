@@ -382,23 +382,28 @@ function LivePlayer() {
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadVideoId = useCallback(async (silent = false) => {
-    // silent=true: periodic background refresh — keeps the iframe mounted so playback continues
+    // silent=true: background refresh — keep iframe mounted so playback is not interrupted
     if (!silent) { setStatus("loading"); setEmbedBlocked(false); }
     try {
       const res  = await fetch("/api/cnn-live");
       const json = await res.json();
       if (json.videoId) {
-        setVideoId(json.videoId);
+        // Only swap videoId (and reset embedBlocked) when the ID actually changed
+        setVideoId(prev => {
+          if (prev !== json.videoId) setEmbedBlocked(false);
+          return json.videoId;
+        });
         setStatus("ok");
-        // Background refresh every 30 min in case the live stream changes video ID
-        retryRef.current = setTimeout(() => loadVideoId(true), 30 * 60 * 1000);
+        // Refresh every 5 min so we always have the latest live ID
+        retryRef.current = setTimeout(() => loadVideoId(true), 5 * 60 * 1000);
       } else {
         if (!silent) setStatus("error");
-        retryRef.current = setTimeout(() => loadVideoId(true), 2 * 60 * 1000);
+        // Retry more aggressively when no live stream found (channel may go live soon)
+        retryRef.current = setTimeout(() => loadVideoId(true), 90 * 1000);
       }
     } catch {
       if (!silent) setStatus("error");
-      retryRef.current = setTimeout(() => loadVideoId(true), 2 * 60 * 1000);
+      retryRef.current = setTimeout(() => loadVideoId(true), 90 * 1000);
     }
   }, []);
 
@@ -408,17 +413,30 @@ function LivePlayer() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Detect YouTube iframe API errors via postMessage (code 100/101/150 = embedding blocked)
+  // React to YouTube iframe API postMessage events:
+  // - onError (100/101/150): embedding blocked → show fallback
+  // - playerState 0 (ended): live stream stopped → re-fetch for new broadcast
+  // - playerState -1 (unstarted): stale video ID → re-fetch silently
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
       try {
         const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
-        if (data?.event === "onError") setEmbedBlocked(true);
+        if (data?.event === "onError") {
+          setEmbedBlocked(true);
+        }
+        if (data?.event === "infoDelivery") {
+          const state = data?.info?.playerState;
+          if (state === 0) {
+            // Video ended — the live stream may have restarted with a new ID
+            if (retryRef.current) clearTimeout(retryRef.current);
+            retryRef.current = setTimeout(() => loadVideoId(false), 3000);
+          }
+        }
       } catch { /* ignore non-JSON messages */ }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [videoId]);
+  }, [videoId, loadVideoId]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "https://c4person.com.br";
   const embedSrc = videoId

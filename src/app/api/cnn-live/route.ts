@@ -1,45 +1,66 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 
-// CNN Money Brasil YouTube channel handle
 const CHANNEL_HANDLE = "cnnbrmoney";
+const LIVE_URL = `https://www.youtube.com/@${CHANNEL_HANDLE}/live`;
 
-// Server-side cache so we don't hammer YouTube on every client render
+// Server-side cache — 2 min TTL so the link is always fresh
 let cache: { videoId: string | null; ts: number } = { videoId: null, ts: 0 };
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = 2 * 60 * 1000;
+
+const YT_ID_RE = /[?&]v=([a-zA-Z0-9_-]{11})/;
+const YT_EMBED_RE = /\/embed\/([a-zA-Z0-9_-]{11})/;
+const YT_SHORT_RE = /youtu\.be\/([a-zA-Z0-9_-]{11})/;
+
+function extractId(url: string): string | null {
+  return (YT_ID_RE.exec(url) ?? YT_EMBED_RE.exec(url) ?? YT_SHORT_RE.exec(url))?.[1] ?? null;
+}
 
 async function fetchLiveVideoId(): Promise<string | null> {
-  // Strategy 1: fetch the channel's /live page and extract videoId from the canonical og:url
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+  };
+
+  // Strategy 1: check the final redirect URL — when live, YouTube redirects
+  // @channel/live → /watch?v=VIDEO_ID, so res.url gives us the ID directly.
   try {
-    const res = await fetch(`https://www.youtube.com/@${CHANNEL_HANDLE}/live`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-      },
-      // 8-second timeout via AbortSignal
-      signal: AbortSignal.timeout(8000),
-    });
+    const res = await fetch(LIVE_URL, { headers, signal: AbortSignal.timeout(8000) });
+    if (res.ok && res.url !== LIVE_URL) {
+      const id = extractId(res.url);
+      if (id) return id;
+    }
+
+    // Strategy 2: parse HTML for og:url / canonical / ytInitialData
     if (res.ok) {
       const html = await res.text();
-      // og:url contains the canonical watch URL when live: https://www.youtube.com/watch?v=VIDEO_ID
-      const ogMatch = html.match(/"og:url"[^>]*content="https:\/\/www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})"/);
-      if (ogMatch) return ogMatch[1];
-      // Also try the canonical link
-      const canonMatch = html.match(/canonical.*?watch\?v=([a-zA-Z0-9_-]{11})/);
-      if (canonMatch) return canonMatch[1];
-      // videoId in ytInitialData
+
+      // og:url — most reliable when present
+      const ogMatch = html.match(/property="og:url"\s+content="([^"]+)"/);
+      if (ogMatch) { const id = extractId(ogMatch[1]); if (id) return id; }
+
+      // <link rel="canonical">
+      const canonMatch = html.match(/rel="canonical"\s+href="([^"]+)"/);
+      if (canonMatch) { const id = extractId(canonMatch[1]); if (id) return id; }
+
+      // ytInitialData videoId near "isLive":true — pick the live one if possible
+      const liveIdMatch = html.match(/"isLive"\s*:\s*true[^}]{0,200}"videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"/);
+      if (liveIdMatch) return liveIdMatch[1];
+
+      // Fallback: first videoId in ytInitialData
       const initMatch = html.match(/"videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"/);
       if (initMatch) return initMatch[1];
     }
   } catch {
-    // fetch failed or timed out — fall through to strategy 2
+    // network error — fall through
   }
 
-  // Strategy 2: YouTube RSS feed — grab the latest video (may be the active live)
+  // Strategy 3: YouTube RSS feed (latest upload may be the active live)
   try {
-    // First try to resolve the channel ID via @handle page
-    const feedUrl = `https://www.youtube.com/feeds/videos.xml?user=${CHANNEL_HANDLE}`;
-    const rssRes = await fetch(feedUrl, { signal: AbortSignal.timeout(6000) });
+    const rssRes = await fetch(
+      `https://www.youtube.com/feeds/videos.xml?user=${CHANNEL_HANDLE}`,
+      { headers, signal: AbortSignal.timeout(6000) }
+    );
     if (rssRes.ok) {
       const xml = await rssRes.text();
       const match = xml.match(/<yt:videoId>([a-zA-Z0-9_-]{11})<\/yt:videoId>/);
@@ -64,6 +85,6 @@ export async function GET() {
   return NextResponse.json({
     videoId,
     cached: false,
-    channelUrl: `https://www.youtube.com/@${CHANNEL_HANDLE}/live`,
+    channelUrl: LIVE_URL,
   });
 }
