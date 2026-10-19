@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { AssinarActions, AssinarSignOut } from "./AssinarActions";
+import { LogoMark } from "@/components/LogoMark";
 
 export default async function AssinarPage() {
   let hasCpf = false;
@@ -44,10 +45,8 @@ export default async function AssinarPage() {
 
       <div className="relative z-10 max-w-md w-full text-center">
         <div className="flex items-center justify-center gap-3 mb-10">
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-sm shadow-[0_0_20px_rgba(139,92,246,0.5)]">
-            C4
-          </div>
-          <span className="font-bold text-white text-xl">C4 Person</span>
+          <LogoMark size={40} className="drop-shadow-[0_0_12px_rgba(124,58,237,0.6)]" />
+          <span className="font-bold text-white text-xl">C4Person</span>
         </div>
 
         <div className="bg-card border border-primary/20 rounded-3xl p-8 shadow-[0_0_80px_rgba(139,92,246,0.1)] relative overflow-hidden">

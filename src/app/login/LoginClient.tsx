@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft, User, Calendar, CreditCard } from "lucide-react";
+import { LogoMark } from "@/components/LogoMark";
 import Link from "next/link";
 
 export default function LoginClient() {
@@ -94,10 +95,8 @@ export default function LoginClient() {
         className="w-full max-w-md"
       >
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center text-white font-bold text-2xl shadow-[0_0_30px_rgba(139,92,246,0.4)] mb-4">
-            C4
-          </div>
-          <h1 className="text-2xl font-bold text-white">C4 Person</h1>
+          <LogoMark size={56} className="mb-4 drop-shadow-[0_0_20px_rgba(124,58,237,0.5)]" />
+          <h1 className="text-2xl font-bold text-white">C4Person</h1>
           <p className="text-muted-foreground text-sm mt-1">Seu pilar de execução diária</p>
         </div>
 

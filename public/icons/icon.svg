@@ -1,26 +1,34 @@
-
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#7c3aed;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#4f46e5;stop-opacity:1" />
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#3730a3"/>
+      <stop offset="52%"  stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#c026d3"/>
     </linearGradient>
-    <linearGradient id="c4g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#e0d9ff;stop-opacity:1" />
-    </linearGradient>
+    <radialGradient id="l" cx="38%" cy="30%" r="60%">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity=".18"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="rr">
+      <rect width="100" height="100" rx="22"/>
+    </clipPath>
   </defs>
-  <!-- Background rounded rect -->
-  <rect width="512" height="512" rx="112.64" ry="112.64" fill="url(#bg)"/>
-  <!-- Subtle inner glow -->
-  <rect width="512" height="512" rx="112.64" ry="112.64" 
-    fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="15.36"/>
-  <!-- C4 text -->
-  <text x="256" y="322.56" 
-    font-family="system-ui, -apple-system, sans-serif" 
-    font-weight="800" 
-    font-size="194.56" 
-    fill="white" 
-    text-anchor="middle"
-    letter-spacing="-5.12">C4</text>
+  <g clip-path="url(#rr)">
+    <rect width="100" height="100" fill="url(#g)"/>
+    <rect width="100" height="100" fill="url(#l)"/>
+    <!-- C arc — opens toward right -->
+    <path d="M 43.9,59.7 A 17,17 0 1 0 43.9,40.3"
+          stroke="#ffffff" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <!-- 4 vertical stroke -->
+    <line x1="69" y1="22" x2="69" y2="78"
+          stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+    <!-- 4 diagonal stroke -->
+    <line x1="69" y1="22" x2="52" y2="57"
+          stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+    <!-- 4 crossbar -->
+    <line x1="48" y1="57" x2="73" y2="57"
+          stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+    <!-- diamond accent -->
+    <polygon points="50,74 53.5,78 50,82 46.5,78" fill="#ffffff" opacity=".45"/>
+  </g>
 </svg>

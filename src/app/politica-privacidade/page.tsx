@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { LogoMark } from "@/components/LogoMark";
 
 export const metadata = {
   title: "Política de Privacidade — C4 Person",
@@ -19,10 +20,8 @@ export default function PoliticaPrivacidadePage() {
         </Link>
 
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center text-white font-bold text-sm">
-            C4
-          </div>
-          <span className="font-bold text-white text-lg">C4 Person</span>
+          <LogoMark size={36} />
+          <span className="font-bold text-white text-lg">C4Person</span>
         </div>
 
         <h1 className="text-3xl font-black text-white mb-2">Política de Privacidade</h1>
