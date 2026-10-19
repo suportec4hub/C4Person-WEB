@@ -11,8 +11,9 @@ const supabaseAdmin = (() => {
 
 function verifyToken(req: NextRequest): boolean {
   const token = process.env.ASAAS_WEBHOOK_TOKEN;
-  if (!token) return true; // token not configured — allow (dev/test mode)
   const received = req.headers.get("asaas-access-token") ?? "";
+  console.log(`[ASAAS Webhook] token env=${token ? `"${token.slice(0, 6)}…"(len=${token.length})` : "NÃO DEFINIDO"} received=${received ? `"${received.slice(0, 6)}…"(len=${received.length})` : "VAZIO"}`);
+  if (!token) return true; // token not configured — allow
   return received === token;
 }
 
