@@ -27,35 +27,32 @@ jobs:
       - name: Verify Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls $ANDROID_HOME/cmdline-tools/ || echo "cmdline-tools not found"
-          ls $ANDROID_HOME/build-tools/ || echo "build-tools not found at default"
+          ls $ANDROID_HOME/cmdline-tools/ 2>&1 || true
+          ls $ANDROID_HOME/build-tools/ 2>&1 || true
+          ls $ANDROID_HOME/platforms/ 2>&1 || true
 
       - name: Accept SDK licenses
-        run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || \
-          yes | $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager --licenses 2>/dev/null || \
-          true
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
 
       - name: Install SDK components
         run: |
-          SDK_MGR=$(find $ANDROID_HOME/cmdline-tools -name sdkmanager -type f 2>/dev/null | head -1)
-          if [ -n "$SDK_MGR" ]; then
-            "$SDK_MGR" "build-tools;34.0.0" "platforms;android-34"
-          else
-            echo "sdkmanager not found, skipping"
-          fi
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "build-tools;34.0.0" "platforms;android-34" 2>&1 || true
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.4'
+      - name: Download Gradle 8.4
+        run: |
+          curl -sL https://services.gradle.org/distributions/gradle-8.4-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /opt/gradle-dist
+          echo "/opt/gradle-dist/gradle-8.4/bin" >> $GITHUB_PATH
 
       - name: Build debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle-build.log
+          tail -100 /tmp/gradle-build.log
 
       - name: Print signing fingerprint
+        if: success()
         working-directory: android
         run: |
           echo "==== SHA-256 fingerprint (copy to assetlinks.json) ===="
@@ -63,8 +60,17 @@ jobs:
             | grep -i "SHA256" || true
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: C4Person-debug-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}
+          path: /tmp/gradle-build.log
+          retention-days: 7
