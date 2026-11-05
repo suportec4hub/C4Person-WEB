@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ArrowRight, CreditCard, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { trackFunnelEvent } from "@/components/FunnelTracker";
 
 export function AssinarSignOut() {
   const router = useRouter();
@@ -61,6 +62,7 @@ export function AssinarActions({ hasCpf = false }: { hasCpf?: boolean }) {
 
       const data = await res.json();
       if (data.url) {
+        trackFunnelEvent("checkout_start", "/assinar");
         window.location.href = data.url;
       } else {
         alert(data.error || "Erro ao iniciar pagamento. Tente novamente.");

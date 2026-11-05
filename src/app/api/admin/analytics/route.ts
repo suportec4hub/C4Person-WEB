@@ -12,7 +12,9 @@ export async function GET() {
   const twoMinAgo  = new Date(now.getTime() - 2 * 60 * 1000);
   const fourteenDaysAgo = new Date(now); fourteenDaysAgo.setDate(now.getDate() - 13); fourteenDaysAgo.setHours(0, 0, 0, 0);
 
-  const [presenceRes, viewsTodayRes, viewsWeekRes, topPagesRes, hourlyRes, dailyRes, userActivityRes] = await Promise.all([
+  const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(now.getDate() - 29); thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+  const [presenceRes, viewsTodayRes, viewsWeekRes, topPagesRes, hourlyRes, dailyRes, userActivityRes, funnelRes] = await Promise.all([
     // Online now (last 2 min)
     supabaseAdmin
       .from("user_presence")
@@ -56,6 +58,12 @@ export async function GET() {
       .gte("created_at", weekStart.toISOString())
       .order("created_at", { ascending: false })
       .limit(500),
+
+    // Funnel events — last 30 days
+    supabaseAdmin
+      .from("funnel_events")
+      .select("event, session_id")
+      .gte("created_at", thirtyDaysAgo.toISOString()),
   ]);
 
   // ── Process online now ────────────────────────────────────────────────────
@@ -145,6 +153,25 @@ export async function GET() {
       lastSeen: data.lastSeen,
     }));
 
+  // ── Funnel (last 30 days) ─────────────────────────────────────────────────
+  const funnelData = funnelRes.data ?? [];
+  const funnelCounts = {
+    page_views:        new Set<string>(),
+    cta_click:         new Set<string>(),
+    checkout_start:    new Set<string>(),
+    checkout_complete: new Set<string>(),
+  };
+  for (const row of funnelData) {
+    const key = row.event as keyof typeof funnelCounts;
+    if (funnelCounts[key]) funnelCounts[key].add(row.session_id);
+  }
+  const funnel = [
+    { step: "Visitantes", count: funnelCounts.page_views.size,        event: "page_view" },
+    { step: "Clicaram CTA", count: funnelCounts.cta_click.size,       event: "cta_click" },
+    { step: "Iniciaram checkout", count: funnelCounts.checkout_start.size, event: "checkout_start" },
+    { step: "Converteram", count: funnelCounts.checkout_complete.size, event: "checkout_complete" },
+  ];
+
   return NextResponse.json({
     onlineNow,
     onlinePages,
@@ -155,5 +182,6 @@ export async function GET() {
     hourlyCounts,
     dailyLast14,
     userActivity,
+    funnel,
   });
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { trackFunnelEvent } from "./FunnelTracker";
 
 interface Props {
   className?: string;
@@ -14,6 +15,7 @@ export function CheckoutButton({ className, children }: Props) {
   const [loading, setLoading] = useState(false);
 
   const handleClick = async () => {
+    trackFunnelEvent("cta_click", window.location.pathname, { button: "checkout" });
     setLoading(true);
     try {
       const res = await fetch("/api/checkout", { method: "POST" });
@@ -26,6 +28,7 @@ export function CheckoutButton({ className, children }: Props) {
 
       const data = await res.json();
       if (data.url) {
+        trackFunnelEvent("checkout_start", window.location.pathname);
         window.location.href = data.url;
       } else {
         alert(data.error || "Erro ao iniciar pagamento. Tente novamente.");

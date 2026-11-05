@@ -5,6 +5,8 @@ import {
   BarChart3, Quote, Layers,
 } from "lucide-react";
 import { CheckoutButton } from "@/components/CheckoutButton";
+import { CTALink } from "@/components/CTALink";
+import { FunnelTracker } from "@/components/FunnelTracker";
 import { LogoMark } from "@/components/LogoMark";
 
 /* ── tiny helpers ── */
@@ -121,6 +123,7 @@ const FAQ_ITEMS = [
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      <FunnelTracker page="/" />
 
       {/* ── Ambient gradients ── */}
       <div className="fixed top-[-10%] left-[20%] w-[700px] h-[700px] bg-primary/6 rounded-full blur-[160px] pointer-events-none -z-0" />
@@ -131,9 +134,9 @@ export default function LandingPage() {
         <p className="text-sm text-primary font-medium">
           <span className="font-bold">⚡ Acesso completo a partir de R$15,90/mês</span>
           {" "}— PIX, boleto ou cartão.{" "}
-          <Link href="/login" className="underline underline-offset-2 hover:text-purple-300 transition-colors">
+          <CTALink href="/login" className="underline underline-offset-2 hover:text-purple-300 transition-colors" eventLabel="cta_banner">
             Assinar agora →
-          </Link>
+          </CTALink>
         </p>
       </div>
 
@@ -152,12 +155,13 @@ export default function LandingPage() {
           <Link href="/login" className="text-sm text-muted-foreground hover:text-white transition-colors hidden sm:block">
             Entrar
           </Link>
-          <Link
+          <CTALink
             href="/login"
             className="flex items-center gap-1.5 bg-primary hover:bg-primary/90 text-white px-5 py-2 rounded-full text-sm font-semibold shadow-[0_2px_20px_rgba(139,92,246,0.35)] transition-all hover:scale-105"
+            eventLabel="cta_header"
           >
             Assinar agora <ArrowRight size={14} />
-          </Link>
+          </CTALink>
         </div>
       </header>
 
@@ -188,12 +192,13 @@ export default function LandingPage() {
 
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row gap-4 items-center mb-6">
-          <Link
+          <CTALink
             href="/login"
             className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-8 py-4 rounded-full font-bold text-base shadow-[0_6px_40px_rgba(139,92,246,0.45)] transition-all hover:scale-105 hover:shadow-[0_8px_50px_rgba(139,92,246,0.55)]"
+            eventLabel="cta_hero"
           >
             Começar agora <ArrowRight size={18} />
-          </Link>
+          </CTALink>
           <a
             href="#features"
             className="flex items-center gap-2 text-muted-foreground hover:text-white transition-colors text-sm font-medium"
@@ -658,12 +663,13 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
-            <Link
+            <CTALink
               href="/login"
               className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white px-10 py-4 rounded-full font-bold text-lg shadow-[0_8px_50px_rgba(139,92,246,0.5)] transition-all hover:scale-105"
+              eventLabel="cta_final"
             >
               Assinar agora — R$15,90/mês <ArrowRight size={20} />
-            </Link>
+            </CTALink>
           </div>
 
           {/* Final trust */}

@@ -30,6 +30,7 @@ interface Analytics {
     uniquePages: number;
     lastSeen: string;
   }[];
+  funnel: { step: string; count: number; event: string }[];
 }
 
 function pageLabel(page: string) {
@@ -302,6 +303,55 @@ export default function AdminPage() {
             </>
           ) : (
             <div className="h-8 flex items-center justify-center text-muted-foreground text-xs">Sem dados ainda</div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Conversion Funnel ── */}
+      <div>
+        <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <TrendingUp size={18} className="text-accent" />
+          Funil de Conversão — últimos 30 dias
+          <span className="text-xs font-normal text-muted-foreground ml-1">(visitantes anônimos → assinantes)</span>
+        </h2>
+        <div className="bg-card border border-white/8 rounded-2xl p-6">
+          {analytics?.funnel?.length ? (
+            <div className="space-y-4">
+              {analytics.funnel.map((step, i) => {
+                const topCount = analytics.funnel[0].count || 1;
+                const pct = Math.round((step.count / topCount) * 100);
+                const dropPct = i > 0
+                  ? Math.round(((analytics.funnel[i - 1].count - step.count) / (analytics.funnel[i - 1].count || 1)) * 100)
+                  : null;
+                const colors = ["bg-primary", "bg-purple-400", "bg-orange-400", "bg-accent"];
+                return (
+                  <div key={step.event} className="flex items-center gap-4">
+                    <div className="w-32 text-xs text-muted-foreground shrink-0 text-right">{step.step}</div>
+                    <div className="flex-1 relative h-8 bg-white/5 rounded-lg overflow-hidden">
+                      <div
+                        className={`h-full ${colors[i] ?? "bg-primary"} rounded-lg transition-all duration-500 opacity-80`}
+                        style={{ width: `${pct}%` }}
+                      />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-white">
+                        {step.count.toLocaleString("pt-BR")}
+                      </span>
+                    </div>
+                    <div className="w-20 text-right text-xs">
+                      <span className="text-white font-medium">{pct}%</span>
+                      {dropPct !== null && dropPct > 0 && (
+                        <span className="ml-1 text-red-400">↓{dropPct}%</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+              <TrendingUp size={28} className="text-white/10" />
+              <p className="text-white/40 text-sm">Nenhum dado de funil ainda</p>
+              <p className="text-muted-foreground text-xs">Aparece quando visitantes navegarem na landing page</p>
+            </div>
           )}
         </div>
       </div>

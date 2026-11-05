@@ -101,6 +101,14 @@ export async function POST(req: NextRequest) {
         { onConflict: "user_id" }
       );
       console.log(`[ASAAS Webhook] ✅ Assinatura ativada — userId=${userId}`);
+
+      // Track checkout completion in funnel
+      await supabaseAdmin.from("funnel_events").insert({
+        session_id: `user:${userId}`,
+        event: "checkout_complete",
+        page: "/assinar",
+        metadata: { userId, asaasEvent: event },
+      });
       break;
     }
 
