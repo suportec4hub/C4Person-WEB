@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { SkeletonPage } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
@@ -42,10 +42,12 @@ import ReactMarkdown from "react-markdown";
 import {
   DndContext,
   DragEndEvent,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
   closestCenter,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -110,6 +112,18 @@ function nextRecurrenceDate(recurrence: string, fromIso?: string): string {
   else if (recurrence === "weekly") base.setDate(base.getDate() + 7);
   else if (recurrence === "monthly") base.setMonth(base.getMonth() + 1);
   return base.toISOString().slice(0, 10);
+}
+
+function FocusDropZone({ children, hasTask }: { children: React.ReactNode; hasTask: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "focus-drop-zone" });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`rounded-xl transition-all duration-200 ${isOver ? "ring-2 ring-primary/60 ring-offset-1 ring-offset-background bg-primary/5" : ""} ${!hasTask && isOver ? "p-1" : ""}`}
+    >
+      {children}
+    </div>
+  );
 }
 
 function getGreeting() {
@@ -222,13 +236,30 @@ export default function Dashboard() {
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    if (over && active.id !== over.id) {
+    if (!over) return;
+
+    // Dropped onto the focus zone → pin that task as focus
+    if (over.id === "focus-drop-zone") {
+      setPinnedFocus(String(active.id));
+      return;
+    }
+
+    // Focus task dragged onto the other-tasks list → unpin
+    if (topPriorityTaskRef.current && active.id === topPriorityTaskRef.current.id && over.id !== "focus-drop-zone") {
+      setPinnedFocus(null);
+      return;
+    }
+
+    // Normal reorder within other tasks
+    if (active.id !== over.id) {
       setTasks(prev => {
         const oldIdx = prev.findIndex(t => t.id === active.id);
         const newIdx = prev.findIndex(t => t.id === over.id);
+        if (oldIdx === -1 || newIdx === -1) return prev;
         return arrayMove(prev, oldIdx, newIdx);
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [mounted, setMounted] = useState(false);
@@ -921,7 +952,21 @@ export default function Dashboard() {
     [bankAccounts]
   );
 
-  const topPriorityTask = tasks.find(t => t.priority === 'alta' && !t.is_done) || tasks.find(t => !t.is_done) || tasks[0];
+  const topPriorityTaskRef = useRef<{ id: string } | null>(null);
+  const [pinnedFocusId, setPinnedFocusId] = useState<string | null>(() => {
+    try { return localStorage.getItem("c4p_focus") ?? null; } catch { return null; }
+  });
+  const setPinnedFocus = (id: string | null) => {
+    setPinnedFocusId(id);
+    try { id ? localStorage.setItem("c4p_focus", id) : localStorage.removeItem("c4p_focus"); } catch {}
+  };
+
+  const topPriorityTask =
+    (pinnedFocusId ? tasks.find(t => t.id === pinnedFocusId && !t.is_done) : null) ??
+    tasks.find(t => t.priority === 'alta' && !t.is_done) ??
+    tasks.find(t => !t.is_done) ??
+    tasks[0];
+  topPriorityTaskRef.current = topPriorityTask ?? null;
   const otherTasks = topPriorityTask ? tasks.filter(t => t.id !== topPriorityTask.id) : tasks;
   const upcomingEvents = tasks.filter(t => t.time && t.time !== "Livre" && !t.is_done).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 
@@ -1137,36 +1182,43 @@ export default function Dashboard() {
               </div>
             )}
 
-            {topPriorityTask ? (
-              <div onClick={() => toggleTask(topPriorityTask.id, topPriorityTask.is_done)} className={`bg-background/50 border border-white/5 rounded-xl p-5 mb-6 flex items-start gap-4 group cursor-pointer hover:border-primary/50 transition-all relative z-10 ${topPriorityTask.is_done ? 'opacity-50' : ''}`}>
-                <button className={`mt-1 transition-colors ${topPriorityTask.is_done ? 'text-accent' : 'text-muted-foreground group-hover:text-primary'}`}>
-                  {topPriorityTask.is_done ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-                </button>
-                <div>
-                  <h4 className={`text-xl font-medium mb-1 ${topPriorityTask.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{topPriorityTask.title}</h4>
-                  <p className="text-muted-foreground text-sm">{topPriorityTask.time && topPriorityTask.time !== 'Livre' ? `Marcado para ${topPriorityTask.time}` : 'Sem horário definido'}</p>
-                </div>
-                <div className="ml-auto flex items-center gap-2">
-                  {topPriorityTask.priority === 'alta' && (
-                    <div className="bg-red-500/20 text-red-400 text-xs font-medium px-3 py-1 rounded-full border border-red-500/30">Alta</div>
-                  )}
-                  <div className="bg-primary/20 text-primary text-xs font-medium px-3 py-1 rounded-full">Principal</div>
-                  <button onClick={(e) => { e.stopPropagation(); deleteTask(topPriorityTask.id); }} className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-background/50 border border-white/5 rounded-xl p-5 mb-6 text-center text-muted-foreground relative z-10">
-                Nenhuma tarefa pendente!
-              </div>
-            )}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <FocusDropZone hasTask={!!topPriorityTask}>
+                {topPriorityTask ? (
+                  <div onClick={() => toggleTask(topPriorityTask.id, topPriorityTask.is_done)} className={`bg-background/50 border border-white/5 rounded-xl p-5 mb-6 flex items-start gap-4 group cursor-pointer hover:border-primary/50 transition-all relative z-10 ${topPriorityTask.is_done ? 'opacity-50' : ''}`}>
+                    <button className={`mt-1 transition-colors ${topPriorityTask.is_done ? 'text-accent' : 'text-muted-foreground group-hover:text-primary'}`}>
+                      {topPriorityTask.is_done ? <CheckCircle2 size={24} /> : <Circle size={24} />}
+                    </button>
+                    <div>
+                      <h4 className={`text-xl font-medium mb-1 ${topPriorityTask.is_done ? 'line-through text-muted-foreground' : 'text-white'}`}>{topPriorityTask.title}</h4>
+                      <p className="text-muted-foreground text-sm">{topPriorityTask.time && topPriorityTask.time !== 'Livre' ? `Marcado para ${topPriorityTask.time}` : 'Sem horário definido'}</p>
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                      {topPriorityTask.priority === 'alta' && (
+                        <div className="bg-red-500/20 text-red-400 text-xs font-medium px-3 py-1 rounded-full border border-red-500/30">Alta</div>
+                      )}
+                      <div className="bg-primary/20 text-primary text-xs font-medium px-3 py-1 rounded-full">Principal</div>
+                      {pinnedFocusId === topPriorityTask.id && (
+                        <button onClick={(e) => { e.stopPropagation(); setPinnedFocus(null); }} title="Remover foco fixo" className="text-muted-foreground hover:text-white transition-all p-1">
+                          <X size={14} />
+                        </button>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); deleteTask(topPriorityTask.id); }} className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-all p-1">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-background/50 border border-dashed border-white/10 rounded-xl p-5 mb-6 text-center text-muted-foreground relative z-10 text-sm">
+                    Arraste uma tarefa aqui para definir o foco
+                  </div>
+                )}
+              </FocusDropZone>
 
-            <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">Outras Tarefas</h3>
-            {otherTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic relative z-10">Nenhuma tarefa. Adicione uma nova!</p>
-            ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <h3 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">Outras Tarefas</h3>
+              {otherTasks.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic relative z-10">Nenhuma tarefa. Adicione uma nova!</p>
+              ) : (
                 <SortableContext items={otherTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
                   <ul className="space-y-3 relative z-10">
                     {otherTasks.map(task => (
@@ -1179,8 +1231,8 @@ export default function Dashboard() {
                     ))}
                   </ul>
                 </SortableContext>
-              </DndContext>
-            )}
+              )}
+            </DndContext>
             
             <button 
               onClick={() => setShowTaskModal(true)}
