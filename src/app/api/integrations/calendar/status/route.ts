@@ -1,0 +1,25 @@
+export const dynamic = "force-dynamic";
+import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
+
+export async function GET() {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll(), setAll: (l) => l.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) } }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ integrations: [] });
+
+  const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const { data } = await supabaseAdmin
+    .from("calendar_integrations")
+    .select("provider, email, updated_at")
+    .eq("user_id", user.id);
+
+  return NextResponse.json({ integrations: data ?? [] });
+}
