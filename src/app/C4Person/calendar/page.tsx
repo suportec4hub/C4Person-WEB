@@ -13,7 +13,7 @@ import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, X,
   Link2, Link2Off, AlertCircle, Bell, BellOff, Clock,
   FileText, Trash2, Edit2, Video, CheckSquare,
-  AlarmClock, Grid3x3, List,
+  AlarmClock, Grid3x3, List, ChevronDown,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
@@ -111,6 +111,35 @@ function scheduleNotifications(events: CalEvent[]) {
       }, delay);
     }
   }
+}
+
+function RemindSelect({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const opts = [{ value: -1, label: "Sem lembrete" }, ...REMIND_OPTS];
+  const selected = opts.find(o => o.value === value) ?? opts[0];
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 bg-white/[0.05] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-white hover:border-primary/40 transition-all focus:outline-none focus:border-primary/50">
+        <span>{selected.label}</span>
+        <ChevronDown size={14} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+            className="absolute z-50 top-full mt-1 w-full bg-[#1a1a2e] border border-white/10 rounded-xl overflow-hidden shadow-2xl shadow-black/50">
+            {opts.map(o => (
+              <button key={o.value} type="button"
+                onClick={() => { onChange(o.value); setOpen(false); }}
+                className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-white/5 ${o.value === value ? "text-primary font-medium bg-primary/10" : "text-white/80"}`}>
+                {o.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 export default function CalendarPage() {
@@ -819,11 +848,7 @@ export default function CalendarPage() {
                   <label className="text-[10px] text-muted-foreground/70 font-bold uppercase tracking-widest flex items-center gap-1.5 mb-1.5">
                     <Bell size={10} /> Lembrete
                   </label>
-                  <select value={form.remind_min} onChange={e => setForm(f => ({ ...f, remind_min: Number(e.target.value) }))}
-                    className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-primary/50 transition-all">
-                    <option value={-1}>Sem lembrete</option>
-                    {REMIND_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  <RemindSelect value={form.remind_min} onChange={v => setForm(f => ({ ...f, remind_min: v }))} />
                   {notifPerm !== "granted" && form.remind_min >= 0 && (
                     <p className="text-[11px] text-amber-400/80 mt-1.5 flex items-center gap-1"><AlertCircle size={10} /> Ative as notificações do navegador para receber este lembrete.</p>
                   )}
