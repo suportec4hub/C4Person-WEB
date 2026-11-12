@@ -16,14 +16,57 @@ const spaceGrotesk = Space_Grotesk({
   weight: ["400", "500", "600", "700"],
 });
 
+const APP_URL = "https://c4person.com.br";
+const APP_NAME = "C4Person";
+const TITLE = "C4Person — Gestão de Tarefas, Hábitos, Finanças e IA em Um Só Lugar";
+const DESCRIPTION =
+  "C4Person é o app de produtividade all-in-one para brasileiros. Gerencie tarefas, metas, hábitos, finanças pessoais e notas com IA — tudo integrado por R$15,90/mês.";
+const KEYWORDS = [
+  "gestão de tarefas",
+  "produtividade pessoal",
+  "controle financeiro pessoal",
+  "hábitos diários",
+  "metas pessoais",
+  "app de produtividade brasileiro",
+  "notas com inteligência artificial",
+  "agenda com IA",
+  "organização pessoal",
+  "planejador diário",
+  "C4Person",
+];
+
 export const metadata: Metadata = {
-  title: "C4Person",
-  description: "Seu Pilar de Execução Diária — tarefas, metas, finanças e hábitos em um só lugar.",
+  metadataBase: new URL(APP_URL),
+  title: {
+    default: TITLE,
+    template: `%s | ${APP_NAME}`,
+  },
+  description: DESCRIPTION,
+  keywords: KEYWORDS,
+  authors: [{ name: "C4Person", url: APP_URL }],
+  creator: "C4Person",
+  publisher: "C4Person",
+  category: "productivity",
   manifest: "/manifest.json",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  alternates: {
+    canonical: APP_URL,
+    languages: { "pt-BR": APP_URL },
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "C4Person",
+    title: APP_NAME,
   },
   icons: {
     icon: [
@@ -32,15 +75,30 @@ export const metadata: Metadata = {
       { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
       { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
-    title: "C4Person",
-    description: "Seu Pilar de Execução Diária",
+    title: TITLE,
+    description: DESCRIPTION,
+    url: APP_URL,
+    siteName: APP_NAME,
     type: "website",
     locale: "pt_BR",
+    images: [
+      {
+        url: `${APP_URL}/og`,
+        width: 1200,
+        height: 630,
+        alt: "C4Person — Gestão de Tarefas, Hábitos, Finanças e IA",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [`${APP_URL}/og`],
+    creator: "@c4person",
   },
 };
 

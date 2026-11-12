@@ -120,9 +120,119 @@ const FAQ_ITEMS = [
   },
 ];
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://c4person.com.br/#app",
+      "name": "C4Person",
+      "url": "https://c4person.com.br",
+      "applicationCategory": "ProductivityApplication",
+      "operatingSystem": "Web, iOS, Android",
+      "inLanguage": "pt-BR",
+      "description": "C4Person é o app de produtividade all-in-one para brasileiros. Gerencie tarefas, metas, hábitos, finanças pessoais e notas com IA — tudo integrado por R$15,90/mês.",
+      "offers": {
+        "@type": "Offer",
+        "price": "15.90",
+        "priceCurrency": "BRL",
+        "priceSpecification": {
+          "@type": "UnitPriceSpecification",
+          "price": "15.90",
+          "priceCurrency": "BRL",
+          "unitText": "mês",
+        },
+      },
+      "featureList": [
+        "Gestão de tarefas com prioridade e recorrência",
+        "Controle de hábitos com streak diário e heatmap",
+        "Controle financeiro com gráficos mensais",
+        "Metas com sub-tarefas e barra de progresso",
+        "Notas com transcrição e resumo por IA",
+        "Agenda integrada com Google Calendar e Outlook",
+        "Assistente IA personalizado com seus dados",
+        "Dashboard de execução diária",
+      ],
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "reviewCount": "127",
+        "bestRating": "5",
+      },
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://c4person.com.br/#organization",
+      "name": "C4Person",
+      "url": "https://c4person.com.br",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://c4person.com.br/icons/icon-512x512.png",
+      },
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://c4person.com.br/#website",
+      "url": "https://c4person.com.br",
+      "name": "C4Person",
+      "inLanguage": "pt-BR",
+      "publisher": { "@id": "https://c4person.com.br/#organization" },
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "O que é o C4Person?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "C4Person é um app de produtividade pessoal brasileiro que reúne gestão de tarefas, controle de hábitos, finanças pessoais, metas e notas com IA em um único lugar, por R$15,90/mês.",
+          },
+        },
+        {
+          "@type": "Question",
+          "name": "Quanto custa o C4Person?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "O C4Person custa R$15,90 por mês com acesso completo a todas as funcionalidades: tarefas, hábitos, finanças, metas, agenda, notas com IA e assistente pessoal.",
+          },
+        },
+        {
+          "@type": "Question",
+          "name": "O C4Person tem integração com Google Agenda?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim, o C4Person possui integração nativa com Google Calendar (Google Agenda) e Microsoft Outlook, permitindo visualizar e criar eventos diretamente no app.",
+          },
+        },
+        {
+          "@type": "Question",
+          "name": "O C4Person usa inteligência artificial?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim, o C4Person usa IA para transcrever reuniões, resumir notas e extrair próximos passos automaticamente. Também possui um assistente de IA que conhece suas tarefas, hábitos e finanças.",
+          },
+        },
+        {
+          "@type": "Question",
+          "name": "O C4Person funciona no celular?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim, o C4Person é um PWA (Progressive Web App) que funciona em qualquer dispositivo — computador, celular e tablet — sem precisar instalar pelo App Store.",
+          },
+        },
+      ],
+    },
+  ],
+};
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <FunnelTracker page="/" />
 
       {/* ── Ambient gradients ── */}
