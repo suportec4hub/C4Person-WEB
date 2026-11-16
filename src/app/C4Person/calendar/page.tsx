@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   format, startOfWeek, addDays, isSameDay, isToday,
@@ -13,7 +13,7 @@ import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, X,
   Link2, Link2Off, AlertCircle, Bell, BellOff, Clock,
   FileText, Trash2, Edit2, Video, CheckSquare,
-  AlarmClock, Grid3x3, List, ChevronDown,
+  AlarmClock, ChevronDown,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
@@ -60,19 +60,6 @@ const REMIND_OPTS = [
 const PROVIDER_LABEL: Record<string, string> = { google: "Google", microsoft: "Outlook" };
 const PROVIDER_COLOR: Record<string, string> = { google: "#4285F4", microsoft: "#0078D4" };
 
-// Grid starts at 06:00, 32 slots × 30 min = ends at 22:00
-const GRID_START_MIN = 6 * 60;   // 360
-const GRID_END_MIN   = 22 * 60;  // 1320
-const SLOT_HEIGHT_PX = 48;       // px per 30-min slot
-const TOTAL_SLOTS    = 32;
-
-const TIME_SLOTS = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
-  const totalMins = GRID_START_MIN + i * 30;
-  const h = Math.floor(totalMins / 60).toString().padStart(2, "0");
-  const m = (totalMins % 60).toString().padStart(2, "0");
-  return `${h}:${m}`;
-});
-
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + (m ?? 0);
@@ -82,13 +69,6 @@ function minutesToTime(min: number): string {
   const h = Math.floor(min / 60).toString().padStart(2, "0");
   const m = (min % 60).toString().padStart(2, "0");
   return `${h}:${m}`;
-}
-
-function getCurrentTimePercent(): number {
-  const now = new Date();
-  const mins = now.getHours() * 60 + now.getMinutes();
-  if (mins < GRID_START_MIN || mins > GRID_END_MIN) return -1;
-  return ((mins - GRID_START_MIN) / (GRID_END_MIN - GRID_START_MIN)) * 100;
 }
 
 function scheduleNotifications(events: CalEvent[]) {
@@ -144,7 +124,6 @@ function RemindSelect({ value, onChange }: { value: number; onChange: (v: number
 
 export default function CalendarPage() {
   const searchParams = useSearchParams();
-  const gridRef = useRef<HTMLDivElement>(null);
 
   const [mounted, setMounted]           = useState(false);
   const [view, setView]                 = useState<"week" | "month">("week");
@@ -158,7 +137,6 @@ export default function CalendarPage() {
   const [showSettings, setShowSettings] = useState(false);
   const [notifPerm, setNotifPerm]       = useState<NotificationPermission>("default");
   const [userId, setUserId]             = useState("");
-  const [nowPct, setNowPct]             = useState(getCurrentTimePercent);
 
   // Modal state
   const [modalOpen, setModalOpen]       = useState(false);
@@ -226,21 +204,6 @@ export default function CalendarPage() {
     fetchIntegrations();
     if (typeof window !== "undefined" && "Notification" in window) setNotifPerm(Notification.permission);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Scroll to current time on week view mount
-  useEffect(() => {
-    if (view !== "week" || !gridRef.current) return;
-    const now = new Date();
-    const mins = now.getHours() * 60 + now.getMinutes();
-    const offset = Math.max(0, ((mins - GRID_START_MIN) / 30) * SLOT_HEIGHT_PX - 120);
-    setTimeout(() => gridRef.current?.scrollTo({ top: offset, behavior: "smooth" }), 100);
-  }, [view, mounted]);
-
-  // Update current time line every minute
-  useEffect(() => {
-    const id = setInterval(() => setNowPct(getCurrentTimePercent()), 60_000);
-    return () => clearInterval(id);
   }, []);
 
   useEffect(() => { refreshRange(); }, [refreshRange]);
@@ -362,7 +325,6 @@ export default function CalendarPage() {
   const connectedProviders = new Set(integrations.map(i => i.provider));
   const hasGoogle = connectedProviders.has("google");
   const typeConfig = (type: string) => TYPE_OPTS.find(t => t.value === type) ?? TYPE_OPTS[0];
-  const weekHasEvents = days.some(d => eventsForDay(d).length > 0);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 relative">
@@ -400,18 +362,6 @@ export default function CalendarPage() {
 
         {/* Controls */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          {/* View toggle */}
-          <div className="flex items-center bg-white/[0.06] border border-white/[0.08] rounded-xl p-1 gap-0.5 mr-1">
-            <button onClick={() => setView("week")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === "week" ? "bg-primary text-white shadow-[0_2px_12px_rgba(139,92,246,0.4)]" : "text-muted-foreground hover:text-white"}`}>
-              <List size={13} /> Semana
-            </button>
-            <button onClick={() => setView("month")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${view === "month" ? "bg-primary text-white shadow-[0_2px_12px_rgba(139,92,246,0.4)]" : "text-muted-foreground hover:text-white"}`}>
-              <Grid3x3 size={13} /> Mês
-            </button>
-          </div>
-
           <button onClick={() => view === "week" ? setWeekStart(w => subWeeks(w, 1)) : setMonthDate(d => subMonths(d, 1))}
             className="p-2 rounded-xl hover:bg-white/8 text-muted-foreground hover:text-white transition-all border border-transparent hover:border-white/10">
             <ChevronLeft size={18} />
@@ -596,162 +546,72 @@ export default function CalendarPage() {
         </motion.div>
       )}
 
-      {/* ══════════════════════ WEEK VIEW ══════════════════════ */}
+      {/* ══════════════════════ WEEK VIEW (strip) ══════════════════════ */}
       {view === "week" && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-white/[0.08] overflow-hidden bg-card/30 backdrop-blur shadow-2xl">
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
 
-          {/* Day header row */}
-          <div className="grid grid-cols-[52px_repeat(7,1fr)] border-b border-white/[0.08] bg-card/60 backdrop-blur sticky top-0 z-20">
-            <div className="border-r border-white/[0.06]" />
+          {/* 7-day strip */}
+          <div className="grid grid-cols-7 gap-2">
             {days.map((day, i) => {
+              const events  = eventsForDay(day);
               const active  = isSameDay(day, selectedDay);
               const today   = isToday(day);
               const weekend = getDay(day) === 0 || getDay(day) === 6;
               return (
                 <button key={i} onClick={() => setSelectedDay(day)}
-                  className={`flex flex-col items-center gap-1 py-3.5 transition-all border-l border-white/[0.05] group relative overflow-hidden ${
-                    active ? "bg-primary/[0.08]" : "hover:bg-white/[0.04]"
+                  className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border transition-all ${
+                    active
+                      ? "bg-primary/[0.12] border-primary/40 shadow-[0_0_20px_rgba(139,92,246,0.15)]"
+                      : today
+                      ? "bg-white/[0.04] border-white/15 hover:border-white/20"
+                      : "border-transparent hover:bg-white/[0.04] hover:border-white/10"
                   }`}>
-                  {active && <div className="absolute inset-x-0 bottom-0 h-[2px] bg-primary rounded-full" />}
-                  <span className={`text-[10px] font-bold uppercase tracking-widest ${weekend ? "text-primary/60" : "text-muted-foreground/60"}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${
+                    weekend ? "text-primary/60" : "text-muted-foreground/60"
+                  }`}>
                     {format(day, "EEE", { locale: ptBR }).slice(0, 3)}
                   </span>
-                  <span className={`text-sm font-bold w-7 h-7 flex items-center justify-center rounded-full transition-all ${
-                    today ? "bg-primary text-white shadow-[0_0_16px_rgba(139,92,246,0.5)]"
-                          : active ? "text-primary"
-                          : "text-white/80 group-hover:text-white"
+                  <span className={`text-sm font-bold w-8 h-8 flex items-center justify-center rounded-full transition-all ${
+                    today
+                      ? "bg-primary text-white shadow-[0_0_16px_rgba(139,92,246,0.5)]"
+                      : active
+                      ? "text-primary"
+                      : "text-white/80"
                   }`}>
                     {format(day, "d")}
                   </span>
+                  <div className="flex gap-0.5 h-2 items-center">
+                    {events.slice(0, 3).map(ev => (
+                      <div key={ev.id} className="w-1.5 h-1.5 rounded-full" style={{ background: ev.color }} />
+                    ))}
+                    {events.length > 3 && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                    )}
+                  </div>
                 </button>
               );
             })}
           </div>
 
-          {/* All-day events strip */}
-          {days.some(d => eventsForDay(d).some(e => e.all_day)) && (
-            <div className="grid grid-cols-[52px_repeat(7,1fr)] border-b border-white/[0.06] bg-white/[0.015]">
-              <div className="flex items-center justify-center text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40 border-r border-white/[0.06] px-1 py-2">
-                dia
+          {/* Selected day card */}
+          <motion.div key={selectedDay.toISOString()} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+            className="bg-card/70 backdrop-blur border border-white/10 rounded-2xl p-5 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-white capitalize">
+                  {isToday(selectedDay) ? "Hoje" : format(selectedDay, "EEEE, d 'de' MMMM", { locale: ptBR })}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {eventsForDay(selectedDay).length} evento{eventsForDay(selectedDay).length !== 1 ? "s" : ""}
+                </p>
               </div>
-              {days.map((day, i) => {
-                const all = eventsForDay(day).filter(e => e.all_day);
-                return (
-                  <div key={i} className="border-l border-white/[0.05] py-1 px-1 min-h-[32px]">
-                    {all.map(ev => (
-                      <div key={ev.id} onClick={() => setDetailEvent(ev)}
-                        className="text-[10px] truncate px-2 py-1 rounded-lg mb-0.5 cursor-pointer font-semibold transition-all hover:brightness-125"
-                        style={{ background: `${ev.color}25`, color: ev.color, borderLeft: `2px solid ${ev.color}` }}>
-                        {ev.title}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
+              <button onClick={() => openCreate(selectedDay)}
+                className="flex items-center gap-1.5 text-xs text-primary hover:text-white hover:bg-primary font-semibold px-3 py-1.5 rounded-lg border border-primary/30 hover:border-primary transition-all">
+                <Plus size={13} /> Novo
+              </button>
             </div>
-          )}
-
-          {/* Time grid */}
-          <div ref={gridRef}
-            className="overflow-y-auto relative"
-            style={{ maxHeight: "calc(100vh - 280px)", scrollbarWidth: "thin", scrollbarColor: "rgba(255,255,255,0.08) transparent" }}>
-
-            {/* Current time line */}
-            {nowPct >= 0 && (
-              <div className="absolute left-0 right-0 z-30 pointer-events-none flex items-center"
-                style={{ top: `${nowPct}%` }}>
-                <div className="w-[52px] flex justify-end pr-1.5">
-                  <div className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(139,92,246,0.8)]" />
-                </div>
-                <div className="flex-1 h-[2px] bg-primary/70 shadow-[0_0_6px_rgba(139,92,246,0.5)]" />
-              </div>
-            )}
-
-            {/* Slot rows */}
-            {TIME_SLOTS.map((slot, si) => {
-              const isHour = slot.endsWith(":00");
-              return (
-                <div key={slot}
-                  className={`grid grid-cols-[52px_repeat(7,1fr)] ${isHour ? "border-t border-white/[0.06]" : ""}`}
-                  style={{ height: SLOT_HEIGHT_PX }}>
-                  {/* Time label */}
-                  <div className={`flex items-start justify-end pr-2.5 pt-1 border-r border-white/[0.05] select-none ${isHour ? "" : "border-t-0"}`}>
-                    {isHour && (
-                      <span className="text-[11px] font-semibold text-white/20 tabular-nums">{slot}</span>
-                    )}
-                  </div>
-
-                  {/* Day columns */}
-                  {days.map((day, di) => {
-                    const startMin = timeToMinutes(slot);
-                    const slotEvs  = eventsForDay(day).filter(ev => {
-                      if (ev.all_day || !ev.start_time) return false;
-                      const st = timeToMinutes(ev.start_time);
-                      return st >= startMin && st < startMin + 30;
-                    });
-                    const isSelected = isSameDay(day, selectedDay);
-                    return (
-                      <div key={di}
-                        onClick={() => openCreate(day, slot)}
-                        className={`border-l border-white/[0.04] relative cursor-pointer group/cell transition-colors ${
-                          isSelected ? "bg-primary/[0.025]" : ""
-                        } hover:bg-white/[0.025] ${isHour ? "" : "border-t border-white/[0.025]"}`}>
-                        {/* Hover indicator */}
-                        <div className="absolute inset-0 opacity-0 group-hover/cell:opacity-100 transition-opacity pointer-events-none flex items-center justify-center">
-                          <Plus size={12} className="text-white/20" />
-                        </div>
-
-                        {/* Events */}
-                        {slotEvs.map(ev => {
-                          const durationMins = ev.end_time
-                            ? Math.max(30, timeToMinutes(ev.end_time) - timeToMinutes(ev.start_time!))
-                            : 60;
-                          const heightPx = (durationMins / 30) * SLOT_HEIGHT_PX - 4;
-                          return (
-                            <div key={ev.id}
-                              onClick={e => { e.stopPropagation(); setDetailEvent(ev); }}
-                              className="absolute inset-x-1 top-1 z-10 rounded-lg cursor-pointer overflow-hidden transition-all hover:brightness-110 hover:shadow-lg"
-                              style={{
-                                height: heightPx,
-                                background: `${ev.color}20`,
-                                borderLeft: `3px solid ${ev.color}`,
-                                backdropFilter: "blur(4px)",
-                                boxShadow: `0 2px 8px ${ev.color}25`,
-                              }}>
-                              <div className="px-1.5 py-1">
-                                <p className="text-[11px] font-bold leading-tight truncate" style={{ color: ev.color }}>
-                                  {ev.title}
-                                </p>
-                                {ev.start_time && durationMins >= 60 && (
-                                  <p className="text-[10px] opacity-70 mt-0.5" style={{ color: ev.color }}>
-                                    {ev.start_time}{ev.end_time ? ` – ${ev.end_time}` : ""}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Empty week state */}
-          {!weekHasEvents && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/8 flex items-center justify-center">
-                <CalendarDays size={24} className="text-primary/40" />
-              </div>
-              <div className="text-center">
-                <p className="text-white/60 font-medium text-sm">Nenhum evento esta semana</p>
-                <p className="text-white/30 text-xs mt-1">Clique em qualquer horário para criar um</p>
-              </div>
-            </div>
-          )}
+            <DayEventList events={eventsForDay(selectedDay)} onDetail={setDetailEvent} />
+          </motion.div>
         </motion.div>
       )}
 
